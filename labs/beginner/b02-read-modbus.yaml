@@ -1,0 +1,39 @@
+id: b02-read-modbus
+title: Read the process over Modbus
+level: beginner
+minutes: 10
+topic: Modbus basics
+intro: |
+  The HMI shows the tank level because it polls plc-1 over Modbus TCP every
+  two seconds. Modbus keeps data in four tables: coils (on/off outputs),
+  discrete inputs (on/off inputs), input registers (measurements) and holding
+  registers (settings). Values are plain 16-bit numbers, so the vendor manual
+  tells you how to scale them.
+
+  In this lab you read the process the same way the HMI does.
+tasks:
+  - "Read the PLC's register map from the vendor manual: `modbus map plc-1`. This sends no traffic."
+  - "Log in to the HMI host: `ssh hmi-01`."
+  - "Read the tank level and the chlorine residual, input registers 0 and 1: `modbus read plc-1 ir 0 2`."
+  - Read the pump start and stop levels, holding registers 0 and 1.
+  - Type `exit` to go back to the console, and write the pump stop level as a percentage into stop-level.txt. The raw value is in tenths of a percent.
+checks:
+  - name: The holding registers were read from hmi-01 (function code 3)
+    command: flows --mine
+    outputMatches: 'hmi-01\s+plc-1\s+modbus\s+\S*\b3\b'
+  - name: stop-level.txt holds the stop level in percent
+    file: { path: stop-level.txt, matches: '^\s*80(\.0+)?\s*%?\s*$' }
+hints:
+  - "`modbus read plc-1 hr 0 2` reads two holding registers starting at address 0."
+  - "A raw value of 800 in tenths of a percent is 80 %. Write it with `echo 80 > stop-level.txt`."
+solution:
+  - ssh hmi-01 modbus read plc-1 ir 0 2
+  - ssh hmi-01 modbus read plc-1 hr 0 2
+  - echo 80 > stop-level.txt
+learned: |
+  Function code 3 reads holding registers and function code 4 reads input
+  registers. The values are scaled integers, which is why register maps
+  matter to defenders and attackers alike. There was no login: any host that
+  can reach port 502 on the PLC can read the whole process.
+refs:
+  - Modbus Application Protocol Specification v1.1b3

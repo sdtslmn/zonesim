@@ -1,0 +1,21 @@
+{
+  "name": "@zonesim/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser version of the ZoneSim OT/ICS security training simulator.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@zonesim/core": "0.1.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0"
+  },
+  "devDependencies": {
+    "vite": "^8.3.8"
+  }
+}

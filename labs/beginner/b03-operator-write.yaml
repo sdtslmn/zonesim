@@ -1,0 +1,33 @@
+id: b03-operator-write
+title: Change a setpoint like an operator
+level: beginner
+minutes: 8
+topic: Modbus basics
+intro: |
+  Operators change setpoints from the HMI. Under the hood the HMI writes a
+  holding register with function code 6.
+
+  The plant manager wants the tank to stop filling at 75 % instead of 80 %,
+  to leave room for storm water. Make the change the way the HMI would.
+tasks:
+  - From hmi-01, set the pump stop level (plc-1 holding register 1) to 75.0 %. The raw value is 750.
+  - Read the register back to confirm the PLC took it.
+  - Run `wait 60` and then `plant` to watch the tank stop filling at the new level.
+checks:
+  - name: The pump stop level is 75.0 % (hr 1 = 750)
+    register: { host: plc-1, table: hr, addr: 1, equals: 750 }
+  - name: The IDS raised no alert, because hmi-01 is an expected writer
+    alert: { title: Unauthorized, exists: false }
+hints:
+  - "`modbus write plc-1 hr 1 750` sends function code 6 to holding register 1."
+  - "Run it on the HMI host: `ssh hmi-01 modbus write plc-1 hr 1 750`."
+solution:
+  - ssh hmi-01 modbus write plc-1 hr 1 750
+  - ssh hmi-01 modbus read plc-1 hr 1
+learned: |
+  Function code 6 writes one holding register, and the PLC simply trusts
+  whoever sends it. The IDS stayed quiet because hmi-01 is in its baseline of
+  hosts that normally write to plc-1. The same command from any other host
+  would be an attack, and the next lab shows how easy that is.
+refs:
+  - Modbus Application Protocol Specification v1.1b3

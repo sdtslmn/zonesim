@@ -1,0 +1,31 @@
+{
+  "name": "zonesim",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An OT/ICS security training simulator. Segment a small water treatment plant into zones and conduits, filter Modbus, and investigate alerts, in the terminal or the browser.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/cli",
+    "packages/web"
+  ],
+  "scripts": {
+    "build": "tsc -b packages/core packages/cli",
+    "build:web": "npm run build --workspace @zonesim/web",
+    "dev:web": "npm run dev --workspace @zonesim/web",
+    "clean": "tsc -b --clean packages/core packages/cli",
+    "test": "vitest run",
+    "start": "node packages/cli/dist/index.js",
+    "sim": "npm run build && node packages/cli/dist/index.js",
+    "validate-labs": "npm run build && node packages/cli/dist/index.js validate-labs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "~5.9.3",
+    "vitest": "^5.1.0"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}

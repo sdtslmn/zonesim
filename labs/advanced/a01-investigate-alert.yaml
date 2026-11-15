@@ -1,0 +1,56 @@
+id: a01-investigate-alert
+title: Investigate an unauthorized write
+level: advanced
+minutes: 15
+topic: Incident response
+intro: |
+  Monday, 06:40. The night shift reports a low chlorine alarm, and the IDS
+  raised several alerts overnight. The network is still flat.
+
+  Find out what happened, put the process right, and stop it from happening
+  again, without breaking the plant.
+setup:
+  - ssh corp-pc nmap -p 502 10.10.10.0/24
+  - ssh corp-pc modbus info plc-1
+  - ssh corp-pc modbus write plc-1 hr 2 0
+settle: 120
+tasks:
+  - Read the alerts with `alerts` and `alerts show ID`. Which IP address did the write come from, and which host is that?
+  - Write the name of that host into attacker.txt.
+  - Find which value was changed and restore it from the HMI. The normal chlorine setpoint is 1.50 mg/L. `modbus map plc-1` helps.
+  - "Contain it: that host must no longer reach plc-1 over Modbus, while every plant data flow keeps working. You do not need a full zone design for this."
+  - Acknowledge the alerts once they are handled.
+checks:
+  - name: attacker.txt names the source of the write
+    file: { path: attacker.txt, matches: 'corp-pc|10\.10\.40\.21' }
+  - name: The chlorine setpoint is back to 1.50 mg/L (plc-1 hr 2 = 150)
+    register: { host: plc-1, table: hr, addr: 2, equals: 150 }
+  - name: The source host can no longer write to plc-1
+    flow: { from: corp-pc, to: plc-1, service: modbus, fc: 6, expect: blocked }
+  - name: Every plant data flow still works
+    required: all
+  - name: The alert for the write is acknowledged
+    alert: { title: Unauthorized Modbus write, src: corp-pc, acked: true }
+hints:
+  - "`alerts show` gives the source IP. `hosts | grep 10.10.40.21` turns it into a name."
+  - "The write hit holding register 2, CL_SETPOINT. Restore it with `ssh hmi-01 modbus write plc-1 hr 2 150`."
+  - "Put corp-pc in a zone of its own. Then office reports need a conduit to site with one rule: corp-pc to hist-dmz https."
+solution:
+  - alerts
+  - echo corp-pc > attacker.txt
+  - ssh hmi-01 modbus write plc-1 hr 2 150
+  - zone create enterprise --sl 1
+  - zone add enterprise corp-pc
+  - conduit create ent-site enterprise site
+  - fw allow ent-site from corp-pc to hist-dmz https
+  - alerts ack all
+learned: |
+  A typical first response: identify the source from the detection, restore
+  the process from a trusted station, contain the source with segmentation
+  without stopping the plant, then acknowledge and write it up. Note the
+  attacker's path in the alerts: a scan for port 502, a device
+  identification read, then the write. Reconnaissance usually comes first,
+  and catching it early buys time.
+refs:
+  - NIST SP 800-61 (incident handling)
+  - MITRE ATT&CK for ICS T0846 (remote system discovery), T0855 (unauthorized command message)

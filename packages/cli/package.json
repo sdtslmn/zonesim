@@ -1,0 +1,16 @@
+{
+  "name": "@zonesim/cli",
+  "version": "0.1.0",
+  "description": "Terminal version of the ZoneSim OT/ICS security training simulator.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "zonesim": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@zonesim/core": "0.1.0"
+  }
+}

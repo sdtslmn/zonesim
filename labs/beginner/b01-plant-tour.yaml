@@ -1,0 +1,40 @@
+id: b01-plant-tour
+title: Get to know the plant
+level: beginner
+minutes: 8
+topic: Asset inventory
+intro: |
+  You have just joined the Riverside water treatment plant as its OT security
+  engineer. Before you change anything, find out what is there.
+
+  You are on the console, an out-of-band management station. It does not send
+  traffic on the plant network. To act from a host, log in to it with ssh, or
+  run one command there with `ssh HOST COMMAND`.
+tasks:
+  - Run `hosts` to see every host, its Purdue level, its zone and the services it offers. Which one is the PLC?
+  - Run `plant` and `hmi` to see the process, the safety system and what the operator sees.
+  - "Ask the PLC for its vendor, model and firmware from the engineering workstation: `ssh ews-01 modbus info plc-1`."
+  - Write the PLC firmware version into a file called firmware.txt, for example with `echo VERSION > firmware.txt`.
+  - Write the IP address of the safety system sis-1 into sis-ip.txt.
+checks:
+  - name: firmware.txt holds the PLC firmware version
+    file: { path: firmware.txt, matches: '2\.4\.1' }
+  - name: sis-ip.txt holds the IP address of sis-1
+    file: { path: sis-ip.txt, matches: '10\.10\.10\.20' }
+hints:
+  - "`hosts` lists every IP address. `hosts -o wide` also shows the operating system."
+  - "`modbus info plc-1` reads the device identification (function code 43). Look for MajorMinorRevision."
+  - "`echo 2.4.1 > firmware.txt` writes a file, `cat firmware.txt` shows it."
+solution:
+  - ssh ews-01 modbus info plc-1
+  - echo 2.4.1 > firmware.txt
+  - echo 10.10.10.20 > sis-ip.txt
+learned: |
+  You cannot protect what you do not know, so an asset inventory comes first:
+  hosts, addresses, roles, firmware. Note how easily the PLC told you its
+  vendor, model and firmware over Modbus function code 43. Anyone on the
+  network can ask the same question and look up known vulnerabilities for
+  that exact firmware.
+refs:
+  - IEC 62443-2-1 (asset inventory)
+  - NIST SP 800-82r3 (OT asset management)
