@@ -17,7 +17,9 @@
 
 ## Next
 
-- Share the terminal, lab and exam engine with PodSim as a common package
+ZoneSim stays a standalone project with no dependencies on other simulator
+repos.
+
 - DNP3 next to Modbus, and a second site connected over a WAN
 - More scenarios: ransomware spreading from the office, an insider on the
   engineering workstation, a rogue device in the control zone
