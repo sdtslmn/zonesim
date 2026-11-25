@@ -55,6 +55,12 @@ export interface Host {
   services: ServiceName[];
   zone: string;
   mfa: boolean;
+  /** Where the host plugs in: a switch and port. Hosts beyond the firewall have none. */
+  port?: { device: string; port: string };
+  /** False when its switch port is shut down or not a member of its VLAN. */
+  link: boolean;
+  /** Why the link is down, for messages. */
+  linkReason?: string;
 }
 
 export interface Zone {
@@ -62,6 +68,10 @@ export interface Zone {
   /** Target security level (SL-T, 1 to 4) from the risk assessment. */
   sl?: number;
   description?: string;
+  /** The VLAN that carries the zone on the plant switches. */
+  vlan?: number;
+  /** A firewall port instead of a VLAN (the internet, a WAN link). */
+  port?: string;
 }
 
 export type Endpoint = { type: "any" } | { type: "host"; name: string } | { type: "zone"; name: string };
@@ -75,6 +85,17 @@ export interface Rule {
   /** Allowed Modbus function codes. Undefined means all. */
   fc?: number[];
   hits: number;
+  /** Firewall policy ID. One policy can make several rules. */
+  id?: number;
+  /** Policy name on the firewall. */
+  name?: string;
+  /** Application control list on the firewall that sets fc. */
+  appList?: string;
+  /** Interfaces given explicitly on the firewall. The rule then only matches traffic between them. */
+  srcintf?: string;
+  dstintf?: string;
+  /** A disabled policy is kept but matches nothing. */
+  disabled?: boolean;
 }
 
 export interface Conduit {
@@ -93,7 +114,7 @@ export interface Verdict {
   /** 1-based rule number that decided, if any. */
   rule?: number;
   intraZone?: boolean;
-  blockedBy?: "no-conduit" | "default-deny" | "deny-rule" | "function-code";
+  blockedBy?: "no-conduit" | "default-deny" | "deny-rule" | "function-code" | "link-down";
 }
 
 const NAME_RE = /^[a-z][a-z0-9-]{0,23}$/;
@@ -112,6 +133,9 @@ export class Network {
   zones: Zone[];
   conduits: Conduit[];
 
+  /** The next free firewall policy ID. */
+  nextRuleId = 1;
+
   constructor(site: Site) {
     // The network as found, from the site file.
     const zoneOf = new Map<string, string>();
@@ -128,8 +152,15 @@ export class Network {
       services: h.services as ServiceName[],
       zone: zoneOf.get(h.name) ?? "",
       mfa: h.mfa === true,
+      link: true,
     }));
-    this.zones = site.zones.map((z) => ({ name: z.name, ...(z.sl ? { sl: z.sl } : {}), ...(z.description ? { description: z.description } : {}) }));
+    this.zones = site.zones.map((z) => ({
+      name: z.name,
+      ...(z.sl ? { sl: z.sl } : {}),
+      ...(z.description ? { description: z.description } : {}),
+      ...(z.vlan !== undefined ? { vlan: z.vlan } : {}),
+      ...(z.port ? { port: z.port } : {}),
+    }));
     this.conduits = site.conduits.map((c) => ({ name: c.name, zones: [c.zones[0], c.zones[1]] as [string, string], rules: [] }));
     for (const c of site.conduits) {
       for (const text of c.rules) {
@@ -224,7 +255,7 @@ export class Network {
 
   // ------------------------------------------------------------ changes
 
-  createZone(name: string, opts: { sl?: number; description?: string } = {}): Zone {
+  createZone(name: string, opts: { sl?: number; description?: string; vlan?: number } = {}): Zone {
     const n = name.toLowerCase();
     if (!NAME_RE.test(n)) throw new UserError(`zone names use lower-case letters, digits and dashes, start with a letter, and are at most 24 characters`);
     if (n === "any") throw new UserError(`"any" is a keyword in firewall rules, pick another name`);
@@ -232,8 +263,41 @@ export class Network {
     if (this.host(n)) throw new UserError(`"${n}" is a host name. Pick a zone name that is not a host, so rules stay unambiguous.`);
     if (this.conduit(n)) throw new UserError(`"${n}" is a conduit name, pick another name`);
     if (opts.sl !== undefined && (!Number.isInteger(opts.sl) || opts.sl < 1 || opts.sl > 4)) throw new UserError("the target security level (--sl) is 1, 2, 3 or 4");
-    const z: Zone = { name: n, ...opts };
+    const vlan = opts.vlan ?? this.freeVlan();
+    if (this.zones.some((z) => z.vlan === vlan)) throw new UserError(`VLAN ${vlan} is already zone ${this.zones.find((z) => z.vlan === vlan)!.name}`);
+    const z: Zone = { name: n, ...(opts.sl !== undefined ? { sl: opts.sl } : {}), ...(opts.description ? { description: opts.description } : {}), vlan };
     this.zones.push(z);
+    return z;
+  }
+
+  /** The next free VLAN ID: 10, 20, 30 ... */
+  freeVlan(): number {
+    for (let v = 10; v < 4090; v += 10) if (!this.zones.some((z) => z.vlan === v)) return v;
+    throw new UserError("no free VLAN ID left");
+  }
+
+  zoneByVlan(vlan: number): Zone | undefined {
+    return this.zones.find((z) => z.vlan === vlan);
+  }
+
+  /** Rename a zone everywhere: hosts, conduits, rules. */
+  renameZone(from: string, to: string): Zone {
+    const z = this.needZone(from);
+    const n = to.toLowerCase();
+    if (n === z.name) return z;
+    if (!NAME_RE.test(n)) throw new UserError(`zone names use lower-case letters, digits and dashes, start with a letter, and are at most 24 characters`);
+    if (this.zone(n) || this.host(n) || this.conduit(n) || n === "any" || n === "all") throw new UserError(`"${n}" is already in use, pick another name`);
+    const old = z.name;
+    z.name = n;
+    for (const h of this.hosts) if (h.zone === old) h.zone = n;
+    for (const c of this.conduits) {
+      c.zones = c.zones.map((x) => (x === old ? n : x)) as [string, string];
+      for (const r of c.rules) {
+        for (const e of [r.src, r.dst]) if (e.type === "zone" && e.name === old) e.name = n;
+        if (r.srcintf === old) r.srcintf = n;
+        if (r.dstintf === old) r.dstintf = n;
+      }
+    }
     return z;
   }
 
@@ -324,6 +388,8 @@ export class Network {
   addRule(conduit: string, rule: Omit<Rule, "hits">, position?: number): { rule: Rule; index: number; warnings: string[] } {
     const c = this.needConduit(conduit);
     const r: Rule = { ...rule, hits: 0 };
+    if (r.id === undefined) r.id = this.nextRuleId++;
+    else this.nextRuleId = Math.max(this.nextRuleId, r.id + 1);
     if (r.fc && r.service !== "modbus") throw new UserError("function codes (fc) only apply to the modbus service");
     const warnings: string[] = [];
     const sideOf = (e: Endpoint): string[] => {
@@ -371,12 +437,15 @@ export class Network {
     const listens = service === "icmp" || dst.services.includes(service);
     const done = (v: Omit<Verdict, "delivered">): Verdict => ({ ...v, delivered: v.allowed && listens });
     if (src === dst) return done({ allowed: true, reason: "same host", intraZone: true });
+    for (const h of [src, dst]) if (!h.link) return done({ allowed: false, reason: `${h.name} is cut off: ${h.linkReason ?? "its switch port is down"}`, blockedBy: "link-down" });
     if (src.zone === dst.zone) return done({ allowed: true, reason: `same zone (${src.zone})`, intraZone: true });
     const c = this.conduitBetween(src.zone, dst.zone);
     if (!c) return done({ allowed: false, reason: `no conduit between zones ${src.zone} and ${dst.zone}`, blockedBy: "no-conduit" });
     let fcMiss: number | undefined;
     for (let i = 0; i < c.rules.length; i++) {
       const r = c.rules[i];
+      if (r.disabled) continue;
+      if ((r.srcintf && r.srcintf !== src.zone) || (r.dstintf && r.dstintf !== dst.zone)) continue;
       if (!this.endpointMatches(r.src, src) || !this.endpointMatches(r.dst, dst) || !this.serviceMatches(r.service, service)) continue;
       if (r.action === "allow" && r.fc && fc !== undefined && !r.fc.includes(fc)) {
         fcMiss ??= i + 1;

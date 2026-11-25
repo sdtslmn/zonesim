@@ -6,3 +6,10 @@ See the LICENSE file for details.
 
 The plant, devices, vendor and register maps in ZoneSim are fictional.
 Any resemblance to a real product is coincidental.
+
+The firewall and switch terminals imitate the command lines of FortiOS
+(Fortinet), HiOS (Hirschmann, a Belden brand) and Cisco IOS so that people
+can practise them. ZoneSim is not affiliated with or endorsed by these
+companies. Fortinet, FortiGate, FortiOS, Hirschmann, HiOS, Belden, Cisco and
+Cisco IOS are trademarks of their respective owners. No code, images or
+documentation of these products are included.

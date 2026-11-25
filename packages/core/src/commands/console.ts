@@ -5,6 +5,7 @@ import type { Shell, CommandFn, CmdContext } from "../shell.js";
 import { quote } from "../shell.js";
 import { LEVEL_NAMES, ruleText, endpointText, SERVICES, type Host, type Rule, type ServiceName } from "../network.js";
 import { TABLES, TABLE_NAMES } from "../modbus.js";
+import { openSession, cliName, vendorName } from "../devices/index.js";
 import type { Sim } from "../sim.js";
 import { C, UserError, table, clock, ago, wrapText } from "../util.js";
 import type { Severity } from "../sim.js";
@@ -59,10 +60,11 @@ const hosts: CommandFn = (args, { io, sim }) => {
   const wide = args.includes("wide") || args.includes("-owide");
   const rows = sim.net.hosts.map((h) => {
     const r = [h.name, h.ip, levelText(h.level), h.zone, h.services.join(",") || "-", h.description];
-    if (wide) r.push(h.role ?? "-", h.os);
+    if (wide) r.push(h.port ? `${h.port.device} ${h.port.port}` : "-", h.role ?? "-", h.os);
+    if (!h.link) r[3] = `${h.zone} ${C.red("(link down)")}`;
     return r;
   });
-  io.stdout(table(["NAME", "IP", "LEVEL", "ZONE", "SERVICES", "DESCRIPTION", ...(wide ? ["LAB ROLE", "OS"] : [])], rows));
+  io.stdout(table(["NAME", "IP", "LEVEL", "ZONE", "SERVICES", "DESCRIPTION", ...(wide ? ["SWITCH PORT", "LAB ROLE", "OS"] : [])], rows));
   return 0;
 };
 
@@ -172,21 +174,22 @@ const zone: CommandFn = (args, { io, sim }) => {
   switch (sub) {
     case "list":
     case "ls": {
-      const rows = net.zones.map((z) => [z.name, z.sl ? `SL ${z.sl}` : "-", net.hostsIn(z.name).map((h) => h.name).join(", ") || C.gray("(empty)")]);
-      io.stdout(table(["NAME", "SL-T", "HOSTS"], rows));
+      const rows = net.zones.map((z) => [z.name, z.vlan !== undefined ? `VLAN ${z.vlan}` : z.port ?? "-", z.sl ? `SL ${z.sl}` : "-", net.hostsIn(z.name).map((h) => h.name).join(", ") || C.gray("(empty)")]);
+      io.stdout(table(["NAME", "CARRIED BY", "SL-T", "HOSTS"], rows));
       return 0;
     }
     case "create": {
       const { opts, rest: r } = takeOptions(rest, ["sl", "description"]);
       needArgs(r, 1, "zone create NAME [--sl 1-4]");
       const z = net.createZone(r[0], { sl: opts.sl !== undefined ? parseInt(opts.sl, 10) : undefined, description: opts.description });
-      io.stdout(`zone ${z.name} created${z.sl ? ` (SL-T ${z.sl})` : ""}. Add hosts with: zone add ${z.name} HOST...\n`);
+      io.stdout(`zone ${z.name} created${z.sl ? ` (SL-T ${z.sl})` : ""} on VLAN ${z.vlan}, with firewall interface ${z.name}. Add hosts with: zone add ${z.name} HOST...\n`);
       return 0;
     }
     case "add":
     case "move": {
       needArgs(rest, 2, "zone add ZONE HOST [HOST...]");
       const moved = net.addToZone(rest[0], rest.slice(1));
+      sim.infra.hostsMoved(moved.filter((m) => m.from !== m.host.zone).map((m) => m.host));
       for (const m of moved) io.stdout(m.from === m.host.zone ? `${m.host.name} is already in zone ${m.host.zone}\n` : `${m.host.name} moved from ${m.from} to ${m.host.zone}\n`);
       const broken = sim.requiredFlows().filter((f) => !f.ok).length;
       if (broken) io.stdout(C.yellow(`${broken} plant data flow${broken === 1 ? " is" : "s are"} blocked now. Type plant to see which, and add conduits for them.\n`));
@@ -197,7 +200,7 @@ const zone: CommandFn = (args, { io, sim }) => {
       const z = net.needZone(rest[0]);
       const members = net.hostsIn(z.name);
       const conduits = net.conduits.filter((c) => c.zones.includes(z.name));
-      io.stdout(`${C.bold(`zone ${z.name}`)}${z.sl ? `  SL-T ${z.sl}` : ""}\n`);
+      io.stdout(`${C.bold(`zone ${z.name}`)}${z.sl ? `  SL-T ${z.sl}` : ""}${z.vlan !== undefined ? `  VLAN ${z.vlan}` : z.port ? `  firewall port ${z.port}` : ""}\n`);
       if (z.description) io.stdout(`  ${z.description}\n`);
       io.stdout(`  Hosts:     ${members.map((h) => `${h.name} (${h.ip})`).join(", ") || "none"}\n`);
       io.stdout(`  Conduits:  ${conduits.map((c) => `${c.name} to ${c.zones.find((x) => x !== z.name)} (${c.rules.length} rule${c.rules.length === 1 ? "" : "s"})`).join(", ") || "none"}\n`);
@@ -357,6 +360,14 @@ const fw: CommandFn = (args, { io, sim }) => {
       const { conduit: name, rule, at } = parseRule(sim, sub, rest);
       const { index, warnings } = net.addRule(name, rule, at);
       const c = net.needConduit(name);
+      const added = c.rules[index - 1];
+      if (added.fc) {
+        added.appList = sim.infra.appListFor(added.fc);
+        if (sim.infra.firewall.exclude !== "none") {
+          delete added.fc;
+          warnings.push(`the firewall excludes OT signatures, so it cannot see function codes and lets all Modbus through. On ${sim.infra.firewall.name}: config ips global, set exclude-signatures none, end`);
+        }
+      }
       io.stdout(`conduit ${c.name} rule ${index}: ${ruleText(c.rules[index - 1])}\n`);
       for (const w of warnings) io.stdout(C.yellow(`warning: ${w}\n`));
       return 0;
@@ -497,8 +508,17 @@ export const ssh: CommandFn = async (args, ctx) => {
     io.stdout(host ? "ssh HOST [COMMAND]   log in to another host over the network (needs ssh on the target)\n" : "ssh HOST [COMMAND]   log in to a host over the management network\n                     with a COMMAND, run it there and come back\n");
     return args.length ? 0 : 1;
   }
-  const target = sim.net.needHost(args[0]);
   const command = args.slice(1);
+  const device = !sim.net.host(args[0]) ? sim.infra.device(args[0]) : undefined;
+  if (device) {
+    if (host) throw new UserError(`${device.name} is managed from the console. Type exit to go back, then ssh ${device.name}`);
+    const session = openSession(sim, device);
+    if (command.length) return shell.runOnDevice(session, command.join(" "), io);
+    shell.session = session;
+    io.stdout(`Connected to ${C.bold(device.name)} (${device.ip}), ${vendorName(device)} ${device.model}, ${cliName(device)} command line.\nType ${C.cyan(device.kind === "firewall" ? "?" : "help")} for the commands here and ${C.cyan("exit")} to go back to the console.\n`);
+    return 0;
+  }
+  const target = sim.net.needHost(args[0]);
   if (!host) {
     if (sim.device(target.name)) {
       const from = sim.site.hmi?.host ?? sim.net.hosts.find((h) => h.level === 2)?.name ?? "HOST";
@@ -522,6 +542,22 @@ export const ssh: CommandFn = async (args, ctx) => {
   if (command.length) return shell.onHost(target.name, quote(command), io);
   shell.stack.push(target.name);
   io.stdout(`Logged in to ${C.bold(target.name)} (${target.ip}) over ssh from ${host.name}. Type ${C.cyan("exit")} to disconnect.\n`);
+  return 0;
+};
+
+// ---------------------------------------------------------------- network devices
+
+const devicesCmd: CommandFn = (args, { io, sim }) => {
+  if (wantsHelp(args)) {
+    io.stdout("devices   the firewall and switches, with their command line. Log in with ssh DEVICE.\n");
+    return 0;
+  }
+  const rows = sim.infra.devices.map((d) => {
+    const ports = d.kind === "switch" ? `${d.ports.filter((p) => p.host).length}/${d.ports.length} ports used${d.unsaved ? ", unsaved changes" : ""}` : `${sim.infra.policies().length} policies, OT signatures ${d.exclude === "none" ? "on" : "off"}`;
+    return [d.name, d.kind, `${vendorName(d)} ${d.model}`, cliName(d), d.ip, ports];
+  });
+  io.stdout(table(["NAME", "TYPE", "MODEL", "CLI", "MGMT IP", "STATE"], rows));
+  io.stdout(C.gray(`Log in with ssh ${sim.infra.firewall.name} or ssh ${sim.infra.switches[0]?.name ?? "SWITCH"}. Hosts and their switch ports: hosts\n`));
   return 0;
 };
 
@@ -554,6 +590,7 @@ export function registerConsole(shell: Shell): void {
   shell.register("alerts", con(alerts));
   shell.register("report", con(report));
   shell.register("ssh", { run: ssh, where: "both" });
+  shell.register("devices", con(devicesCmd, "the firewall and switches"));
 }
 
 export type { Host };

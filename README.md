@@ -4,9 +4,13 @@
 flat network, and secure it: group the hosts into IEC 62443 zones, connect
 them with conduits and firewall rules, filter Modbus function codes, route
 vendor access through a DMZ, and investigate the alerts when someone attacks
-the plant. There are three plants to practise on (a water treatment plant, a
-gas compressor station and a data centre), 34 labs, and you can load your
-own site. It runs in your browser, and nothing real is touched.
+the plant. Pick a job (operator, network engineer, SOC analyst or attacker)
+and work from where that person works: the HMI, the firewall and switches in
+their own command lines (FortiOS, Hirschmann HiOS, Cisco IOS), the alerts, or
+a foothold in the office. There are three plants to practise on (a water
+treatment plant, a gas compressor station and a data centre), 34 labs, and
+you can load your own site. It runs in your browser, and nothing real is
+touched.
 
 **Try it in your browser: [sdtslmn.github.io/zonesim](https://sdtslmn.github.io/zonesim/)**
 
@@ -31,6 +35,10 @@ step. [Open this lab](https://sdtslmn.github.io/zonesim/?lab=i03), or see the
   network that just works, and the IDS sees it.
 - **Design zones and conduits.** Move hosts into zones, connect zones with
   conduits, and write least-privilege rules. Every conduit denies by default.
+- **Configure the real devices.** Each plant has a firewall and switches you
+  can log in to. Create VLANs and move ports on a Hirschmann or Cisco switch,
+  and write policies and application control lists on a FortiGate. Zones are
+  VLANs, conduit rules are firewall policies, and both views stay in step.
 - **Filter Modbus.** Let the historian read with function codes 3 and 4 but
   never write, and keep the safety system read-only from the network.
 - **Keep the plant running.** Each plant needs its data flows (HMI polling,
@@ -154,10 +162,38 @@ The console is an out-of-band management station: it designs zones and reads
 alerts, but sends no plant traffic. To act from a host, `ssh` to it. Type
 `help` for every command, or open the **Help** tab.
 
+The same design on the devices themselves:
+
+```
+console:~$ ssh sw-01
+(Hirschmann SW-RIVERSIDE-01) > enable
+(Hirschmann SW-RIVERSIDE-01) # vlan database
+(Hirschmann SW-RIVERSIDE-01) (Vlan)# vlan add 20
+(Hirschmann SW-RIVERSIDE-01) (Vlan)# name 20 control
+...
+console:~$ ssh fw-01
+FGR60F-RIVERSIDE # config firewall policy
+FGR60F-RIVERSIDE (policy) # edit 0
+new entry '2' added
+FGR60F-RIVERSIDE (2) # set srcintf "operations"
+FGR60F-RIVERSIDE (2) # set dstintf "control"
+FGR60F-RIVERSIDE (2) # set service "MODBUS"
+FGR60F-RIVERSIDE (2) # set application-list "modbus-read"
+```
+
+![The network engineer job on the segmented Riverside plant: the terminal is on the FortiGate, showing a policy with an application control list that lets only Modbus reads through](docs/images/web-devices.png)
+
+See [Firewall and switches](docs/help/devices.md) for the commands. ZoneSim
+imitates these command lines for practice and is not affiliated with
+Fortinet, Belden (Hirschmann) or Cisco.
+
 ## The screen
 
-Labs, Help and Site are on the left. The network map and the plant view are
-on the top right, with a status strip. The terminal is docked at the bottom:
+Labs, Help and Site are on the left. Above the map, pick your job: it sets
+where the terminal is connected (the HMI, a switch, the firewall, the
+console or a host in the office) and gives you the commands that job uses
+most. The network map and the plant view are on the top right, with a
+status strip. The terminal is docked at the bottom:
 drag its edge to resize it, or fold it away. The **Site** button in the top
 bar switches plant in one click, and **Home** brings you back to the start
 page. On a phone the panels stack behind a tab bar.
@@ -183,7 +219,11 @@ Close enough to learn the ideas, simple enough to stay readable:
 
 - Hosts in a zone talk freely. Traffic between zones needs a conduit between
   exactly those two zones, and its rules are checked top-down with an
-  implicit deny at the end. Real networks route through several firewalls.
+  implicit deny at the end. Each plant has one central firewall; real
+  networks often route through several.
+- The device command lines cover what zones, conduits and Modbus filtering
+  need (VLANs, ports, policies, addresses, services, application control,
+  the traffic log), not everything the real products do.
 - Modbus TCP behaves like the real protocol for function codes 1 to 6, 15, 16
   and 43, including exceptions. Other protocols are modelled at the
   connection level only.

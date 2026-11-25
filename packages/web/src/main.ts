@@ -6,11 +6,12 @@ import "@xterm/xterm/css/xterm.css";
 import "./style.css";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { Trainer, parseLab, sortLabs, findLab, builtinSite, loadSiteFile, siteCompatible, VERSION, C, DEFAULT_SITE, type Lab, type Site } from "@zonesim/core";
+import { Trainer, parseLab, sortLabs, findLab, builtinSite, loadSiteFile, siteCompatible, withSwitchVendor, SWITCH_VENDORS, VERSION, C, DEFAULT_SITE, type Lab, type Site, type SwitchVendor } from "@zonesim/core";
 import { LineEditor } from "./line-editor";
 import { NetworkMap } from "./map";
 import { plantPanel, statusStrip } from "./plant";
 import { helpPanel, HELP_PAGES } from "./help";
+import { jobBarHtml, jobFor, whereNow, JOB_IDS, type JobId } from "./jobs";
 import { listSites, siteText, isBuiltin, addSite, removeSite, setActiveSite, startSite, templateText, fetchSite, download } from "./sites";
 
 const REPO_URL: string = import.meta.env.VITE_REPO_URL ?? "https://github.com/sdtslmn/zonesim";
@@ -219,7 +220,9 @@ const state = {
   editorOpen: false,
   /** Plant groups open in the Labs tab. */
   openPlants: new Set<string>(),
+  job: stored<JobId>("zonesim.job", "network"),
 };
+if (!JOB_IDS.includes(state.job)) state.job = "network";
 
 const PLANT_KIND: Record<string, string> = {
   "riverside-water": "drinking water",
@@ -259,9 +262,21 @@ function openCurrentPlant(): void {
 const panel = $("panel");
 const view = $("view");
 
+// ---------------------------------------------------------------- device brands
+
+/** Switch brands picked in the Site tab: site id to switch name to vendor. */
+const brands = stored<Record<string, Record<string, SwitchVendor>>>("zonesim.brands", {});
+
+/** The site with the switch brands picked for it. */
+function branded(site: Site): Site {
+  let out = site;
+  for (const [sw, vendor] of Object.entries(brands[site.id] ?? {})) out = withSwitchVendor(out, sw, vendor);
+  return out;
+}
+
 const trainer: Trainer = new Trainer({
   labs,
-  site: startSite(),
+  site: branded(startSite()),
   print: (s) => term.write(s),
   columns: () => term.cols,
   progress,
@@ -291,6 +306,7 @@ const editor = new LineEditor(term, {
     busy = false;
     if (trainer.lab && state.left === "labs") state.labView = "lab";
     refreshLive();
+    renderJobBar();
     editor.showPrompt();
   },
   onInterrupt: () => {},
@@ -309,9 +325,64 @@ async function runCommand(cmd: string): Promise<void> {
     busy = false;
   }
   refreshLive();
+  renderJobBar();
   editor.showPrompt();
   term.focus();
 }
+
+// ---------------------------------------------------------------- jobs
+
+const jobbar = $("jobbar");
+
+function renderJobBar(): void {
+  if (!trainer.session) return;
+  const html = jobBarHtml(state.job, trainer.sim, whereNow(trainer.shell));
+  if (jobbar.innerHTML !== html) jobbar.innerHTML = html;
+}
+
+function selectJob(id: JobId): void {
+  state.job = id;
+  store("zonesim.job", id);
+  const job = jobFor(id, trainer.sim);
+  if (state.right !== job.view) {
+    state.right = job.view;
+    renderTabs();
+    renderView();
+  }
+  renderJobBar();
+}
+
+/** Point the terminal at a place: the console, a host or a network device. */
+async function connect(target: string): Promise<void> {
+  if (busy) return;
+  const sh = trainer.shell;
+  unfold();
+  if (whereNow(sh) === target) {
+    term.focus();
+    return;
+  }
+  if (sh.session || sh.stack.length) {
+    const was = whereNow(sh);
+    sh.session = undefined;
+    sh.stack.length = 0;
+    term.write(`\n${C.gray(`Left ${was}.`)}\n`);
+    editor.showPrompt();
+  }
+  if (target === "console") {
+    renderJobBar();
+    term.focus();
+    return;
+  }
+  await runCommand(`ssh ${target}`);
+}
+
+jobbar.addEventListener("click", (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLElement>("[data-job], [data-place], [data-cmd]");
+  if (!el) return;
+  if (el.dataset.job) selectJob(el.dataset.job as JobId);
+  else if (el.dataset.place) void connect(el.dataset.place);
+  else if (el.dataset.cmd) void connect("console").then(() => runCommand(el.dataset.cmd!));
+});
 
 function setQuery(changes: Record<string, string | null>): void {
   const q = new URLSearchParams(location.search);
@@ -462,6 +533,8 @@ function sitePanel(): string {
     ${site.description ? `<p>${esc(site.description)}</p>` : ""}
     <div class="meta">${site.hosts.length} hosts · ${Object.keys(site.devices).length} controllers · ${site.flows.length} data flows · ${esc(site.process.model)} process</div>
   </div>
+  <h3>Network devices</h3>
+  ${devicesHtml(site)}
   <h3>Labs on this site</h3>
   ${labsHtml}
   <h3>Sites</h3>
@@ -479,6 +552,31 @@ function sitePanel(): string {
     <div class="actions"><button class="btn primary" data-action="load-text">Check and use</button><button class="btn" data-action="start-template">Start from the template</button></div>
   </details>
   <p class="meta">Site files never leave your browser. To share one, put it online and add <code>?site=</code> and its address to the simulator link.</p>`;
+}
+
+const VENDOR_LABEL: Record<string, string> = { hirschmann: "Hirschmann (HiOS)", cisco: "Cisco (IOS)", fortinet: "Fortinet (FortiOS)" };
+
+/** The firewall and switches of a site, with a brand picker for each switch. */
+function devicesHtml(site: Site): string {
+  const fw = site.network.firewall;
+  const rows = [
+    `<tr><td><b>${esc(fw.name)}</b><div class="meta">firewall</div></td><td><select disabled aria-label="Brand of ${esc(fw.name)}"><option>${VENDOR_LABEL[fw.vendor]}</option></select></td><td class="meta">${esc(fw.model)}</td></tr>`,
+    ...site.network.switches.map(
+      (sw) =>
+        `<tr><td><b>${esc(sw.name)}</b><div class="meta">switch, ${sw.ports.filter((p) => p.host).length} hosts</div></td><td><select data-brand="${esc(sw.name)}" aria-label="Brand of ${esc(sw.name)}">${SWITCH_VENDORS.map((v) => `<option value="${v}"${v === sw.vendor ? " selected" : ""}>${VENDOR_LABEL[v]}</option>`).join("")}</select></td><td class="meta">${esc(sw.model)}</td></tr>`,
+    ),
+  ].join("");
+  return `<p class="meta">Each device's terminal speaks its brand's command line. Log in from the console with <code>ssh ${esc(fw.name)}</code>, or pick the Network engineer job above the map. Changing a brand restarts the sandbox or the lab.</p>
+  <table class="device-table">${rows}</table>
+  <p class="meta">Firewall: Fortinet for now. Switches: Hirschmann or Cisco. <a href="#" data-help="devices.md">Device command reference</a>.</p>`;
+}
+
+async function setBrand(sw: string, vendor: SwitchVendor): Promise<void> {
+  const id = trainer.site.id;
+  brands[id] = { ...(brands[id] ?? {}), [sw]: vendor };
+  store("zonesim.brands", brands);
+  const base = siteById(id);
+  if (base) await useSite(base);
 }
 
 // ---------------------------------------------------------------- right panel
@@ -553,7 +651,7 @@ async function openSandbox(): Promise<void> {
 async function useSite(site: Site): Promise<void> {
   if (busy) return;
   busy = true;
-  trainer.setSite(site);
+  trainer.setSite(branded(site));
   setActiveSite(site.id);
   state.checking = true;
   renderSide();
@@ -573,6 +671,7 @@ async function useSite(site: Site): Promise<void> {
   map.unmount();
   renderSide();
   renderView();
+  renderJobBar();
   editor.showPrompt();
   setQuery({ site: isBuiltin(site.id) && site.id !== DEFAULT_SITE ? site.id : null, lab: keepLab ? trainer.lab!.id.split("-")[0] : null, sandbox: null });
 }
@@ -602,6 +701,7 @@ async function goHome(): Promise<void> {
   renderSide();
   panel.scrollTop = 0;
   renderView();
+  renderJobBar();
   editor.showPrompt();
   setQuery({ lab: null, sandbox: null });
   if (!mobile.matches) term.focus();
@@ -766,6 +866,8 @@ panel.addEventListener("toggle", (e) => {
 }, true);
 
 panel.addEventListener("change", (e) => {
+  const sel = e.target as HTMLSelectElement;
+  if (sel.dataset?.brand) return void setBrand(sel.dataset.brand, sel.value as SwitchVendor);
   const input = e.target as HTMLInputElement;
   if (input.id !== "site-file" || !input.files?.length) return;
   const file = input.files[0];
@@ -858,12 +960,12 @@ void (async () => {
   const params = new URLSearchParams(location.search);
   const siteParam = params.get("site");
   if (siteParam) {
-    if (isBuiltin(siteParam)) trainer.setSite(builtinSite(siteParam));
+    if (isBuiltin(siteParam)) trainer.setSite(branded(builtinSite(siteParam)));
     else {
       const r = await fetchSite(siteParam);
       const loaded = r.text ? addSite(r.text) : undefined;
       if (loaded?.site) {
-        trainer.setSite(loaded.site);
+        trainer.setSite(branded(loaded.site));
         setActiveSite(loaded.site.id);
         state.siteMsg = { kind: "success", html: `<strong>Loaded ${esc(loaded.site.name)}</strong> from the link.` };
       } else {
@@ -890,6 +992,7 @@ void (async () => {
   if (params.has("sandbox")) state.right = "map";
   renderSide();
   renderView();
+  renderJobBar();
   editor.showPrompt();
   if (!mobile.matches) term.focus();
 })();

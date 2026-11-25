@@ -62,16 +62,31 @@ then reads "set the pump stop level (tank-plc holding register 1) to 70 %".
 | Section | What it describes |
 | --- | --- |
 | `hosts` | name, role, IP address, Purdue level (5, 4, 3.5, 3, 2, 1, 0), kind (`external`, `it`, `dmz`, `ot`), services, OS, login user, description |
-| `zones` | the zones as found, with the hosts in each. Most plants start with one flat zone |
+| `zones` | the zones as found, with the hosts in each. Most plants start with one flat zone. A zone can name its `vlan`, or a firewall `port` such as `wan1` for an outside link; ZoneSim picks one when you leave it out |
 | `conduits` | conduits as found, with rules such as `allow from vendor-laptop to ews-01 rdp` |
 | `process` | the process model (`water-tank`, `gas-compressor` or `dc-cooling`), tag names, and parameters such as levels, pressures, temperatures and alarm limits |
 | `devices` | Modbus controllers: vendor, product, firmware, and the point map |
+| `network` | the firewall and the switches: brand, model, management address, and which host is on which switch port. Hosts you leave off every switch go on the first one |
 | `hmi` | which host is the HMI, which controller it shows, and when it reports a communication failure |
 | `polling` | traffic the plant sends by itself, and how often |
 | `flows` | data flows the plant needs. Blocking one breaks something |
 | `ids` | what the IDS treats as normal: who writes to which controller, which controllers are safety systems, who may read device identification |
 
 The template has a comment on every section.
+
+A `network` section looks like this:
+
+```yaml
+network:
+  firewall: { name: fw-01, vendor: fortinet, model: FortiGate Rugged 60F, ip: 192.168.250.1 }
+  switches:
+    - name: sw-01
+      vendor: hirschmann          # or cisco
+      ip: 192.168.250.11
+      ports: { "1/1": corp-pc, "1/2": historian, "1/3": hmi-01, "1/4": plc-1, "1/5": null }
+```
+
+Cisco ports are written `Gi1/1`. A port with `null` is a spare. When a site extends another, you can change a switch's brand alone with `network: { switches: [{ name: sw-01, vendor: cisco }] }`; the Site tab does the same with a menu. See [Firewall and switches](devices.md) for what you can do on them.
 
 ## Roles
 

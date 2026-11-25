@@ -1,5 +1,34 @@
 # Roadmap
 
+ZoneSim is being reworked around jobs: the people who work on a plant. Each
+release adds one of them.
+
+## In 0.3
+
+- Jobs above the map: operator, network engineer, SOC analyst and attacker.
+  Each job connects the terminal to the places that person works from
+- A firewall and switches on every plant, with their own command lines:
+  FortiOS on the firewall, Hirschmann HiOS or Cisco IOS on the switches (pick
+  the brand of each switch in the Site tab)
+- Zones are VLANs on the switches or firewall ports; conduit rules are
+  firewall policies; Modbus function code filtering is an application control
+  list. The console commands and the device commands change the same thing
+- A switch port that is shut down, or not a member of its own VLAN, cuts its
+  host off
+- The firewall's traffic log and policy hit counters
+- Site files describe the network: the firewall, the switches and which host
+  is on which port, and the VLAN or firewall port of each zone
+
+## Next, by job
+
+- Operator: clickable HMI screens for each plant, so the operator works from
+  the HMI and not from the command line
+- SOC analyst: an OT monitoring console (asset inventory, communication
+  baseline, alerts with packet details) in the style of the OT network
+  monitoring tools used on site
+- Labs rewritten per job, so a lab says who you are and where you work from
+- Network engineer: more firewall brands
+
 ## In 0.2
 
 - Bring your own plant: describe a site in a YAML file (host names, IP
@@ -40,7 +69,7 @@
 - 12 labs, from a plant tour to a full zone and conduit design
 - Browser app with a live network map and plant view, and a terminal app
 
-## Next
+## Later
 
 ZoneSim stays a standalone project with no dependencies on other simulator
 repos.

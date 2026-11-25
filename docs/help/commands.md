@@ -10,19 +10,21 @@ your site may use other names.
 
 | Command | What it does |
 | --- | --- |
-| `hosts` | hosts with their IP address, Purdue level, zone and services. `hosts -o wide` adds the role and operating system |
+| `hosts` | hosts with their IP address, Purdue level, zone and services. `hosts -o wide` adds the switch port, role and operating system |
 | `host show HOST` | everything about one host |
 | `plant` | process values, alarms and the plant's data flows |
 | `hmi` | what the operator sees on the HMI |
 | `ssh HOST` | log in to a host. Its commands then send traffic from it |
 | `ssh HOST COMMAND` | run one command on a host and come back |
+| `devices` | the firewall and switches, with the command line each one speaks |
+| `ssh DEVICE` | log in to the firewall or a switch in its own command line. See [Firewall and switches](devices.md) |
 
 ### Design zones and conduits
 
 | Command | What it does |
 | --- | --- |
-| `zone list` | zones and their hosts |
-| `zone create NAME --sl 3` | a new, empty zone with a target security level |
+| `zone list` | zones, the VLAN or firewall port that carries each one, and their hosts |
+| `zone create NAME --sl 3` | a new, empty zone with a target security level. It gets the next free VLAN and a firewall interface |
 | `zone add ZONE HOST...` | move hosts into a zone. A host is in exactly one zone |
 | `zone show ZONE` | hosts, conduits and settings of a zone |
 | `zone set ZONE --sl 2` | change the target security level |

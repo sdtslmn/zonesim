@@ -38,6 +38,7 @@ ${C.bold("Look around")}
   plant                          process values, alarms and the plant's data flows
   hmi                            what the operator sees on the HMI
   ssh HOST [COMMAND]             log in to a host; its commands then send traffic from it
+  devices, ssh DEVICE            the firewall and switches, in their own command line
 ${C.bold("Design zones and conduits")}
   zone list|create|add|show|set|delete
   conduit list|create|show|delete
@@ -203,7 +204,9 @@ export class Trainer {
     let candidates: string[] = [];
     const net = this.sim.net;
     const hostNames = net.hosts.map((h) => h.name);
-    if (words.length === 1) candidates = this.shell.available();
+    const session = this.shell.session;
+    if (session) candidates = words.length === 1 ? session.words() : session.complete(words);
+    else if (words.length === 1) candidates = this.shell.available();
     else {
       const cmd = words[0];
       const sub = words[1];
@@ -217,10 +220,11 @@ export class Trainer {
       else if (cmd === "zone" && words.length === 3) candidates = net.zones.map((z) => z.name);
       else if (cmd === "zone" && words.length > 3) candidates = hostNames;
       else if (cmd === "modbus" && words.length === 2) candidates = ["read", "write", "info", "map"];
-      else if (cmd === "modbus" && words.length === 3) candidates = ["plc-1", "sis-1"];
+      else if (cmd === "modbus" && words.length === 3) candidates = [...this.sim.devices.keys()];
       else if (cmd === "modbus" && words.length === 4) candidates = sub === "write" ? ["coil", "hr"] : ["coil", "di", "ir", "hr"];
       else if (cmd === "alerts" && words.length === 2) candidates = ["show", "ack", "--all"];
       else if (cmd === "alerts" && words.length === 3) candidates = [...this.sim.alerts.map((a) => a.id), "all"];
+      else if (cmd === "ssh" && words.length === 2 && !this.shell.host) candidates = [...this.sim.infra.devices.map((d) => d.name), ...hostNames];
       else if (["ssh", "rdp", "ping", "nmap", "test", "host", "flows"].includes(cmd)) candidates = cmd === "host" && words.length === 2 ? ["show", "config"] : hostNames;
       else candidates = hostNames;
     }

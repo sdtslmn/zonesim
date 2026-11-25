@@ -7,6 +7,7 @@
 
 import { WRITE_FCS, FC_NAMES, type ModbusReply, type ModbusRequest } from "./modbus.js";
 import { Network, type Host, type ServiceName, type Verdict } from "./network.js";
+import { Infra } from "./infra.js";
 import { requiredFlowStatus, riskChecks, type FlowStatus, type RiskCheck } from "./checks.js";
 import { PROCESS_MODELS, WaterTank, type ProcessModel, type Readout } from "./process/index.js";
 import { Controller } from "./device.js";
@@ -35,6 +36,11 @@ export interface TrafficEvent {
   delivered: boolean;
   reason: string;
   conduit?: string;
+  /** Rule number in the conduit that decided it. */
+  rule?: number;
+  /** Zones of the two hosts when it happened. */
+  srcZone?: string;
+  dstZone?: string;
   background: boolean;
 }
 
@@ -83,6 +89,8 @@ export class Sim {
   readonly site: Site;
   readonly plant: ProcessModel;
   readonly net: Network;
+  /** Switches and the firewall: the devices that carry the zones and conduits. */
+  readonly infra: Infra;
   readonly devices = new Map<string, Controller>();
   /** Plant time in seconds since the simulation started. */
   t = 0;
@@ -112,6 +120,7 @@ export class Sim {
     const type = PROCESS_MODELS[this.site.process.model];
     this.plant = type.create(this.site.process.params, this.site.process.tags);
     this.net = new Network(this.site);
+    this.infra = new Infra(this.site, this.net);
     for (const [host, def] of Object.entries(this.site.devices)) this.devices.set(host, new Controller(host, def, this.plant));
     for (const c of this.devices.values()) for (const t of ["coil", "di", "ir", "hr"] as const) for (const p of c.def.points[t]) this.hmiValues[p.signal] = this.plant.get(p.signal);
     this.clock = opts.clock ?? (() => Date.now());
@@ -239,7 +248,7 @@ export class Sim {
     const dst = this.net.needHost(dstRef);
     const v = this.net.evaluate(src, dst, service, opts.fc, { count: true });
     const background = !!opts.background;
-    this.events.push({ seq: ++this.seq, t: this.t, src: src.name, dst: dst.name, service, fc: opts.fc, allowed: v.allowed, delivered: v.delivered, reason: v.reason, conduit: v.conduit, background });
+    this.events.push({ seq: ++this.seq, t: this.t, src: src.name, dst: dst.name, service, fc: opts.fc, allowed: v.allowed, delivered: v.delivered, reason: v.reason, conduit: v.conduit, rule: v.rule, srcZone: src.zone, dstZone: dst.zone, background });
     if (this.events.length > 400) this.events.splice(0, this.events.length - 400);
 
     const key = `${src.name}>${dst.name}>${service}>${background ? "plant" : "you"}`;

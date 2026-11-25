@@ -664,6 +664,21 @@ svg.netmap .host {
   cursor: pointer;
 }
 
+svg.netmap .zone-carrier {
+  font-weight: 400;
+  fill: var(--muted);
+}
+
+svg.netmap g.host.down rect {
+  stroke: var(--bad);
+  stroke-dasharray: 4 3;
+  fill: #fdf0f0;
+}
+
+svg.netmap g.host.down .host-name {
+  text-decoration: line-through;
+}
+
 svg.netmap .host rect {
   fill: #fff;
   stroke: #b8c0ca;
@@ -1357,6 +1372,150 @@ details.why summary,
 
 /* ---------------------------------------------------------------- phones */
 
+/* ---------------------------------------------------------------- jobs */
+
+.jobbar {
+  flex: none;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.jobbar:empty {
+  display: none;
+}
+
+.jobs {
+  display: flex;
+  gap: 2px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.job {
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 12px 7px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.job:hover {
+  color: var(--text);
+}
+
+.job.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.job-body {
+  padding: 6px 12px 8px;
+}
+
+.job-blurb {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.job-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.job-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-right: 2px;
+}
+
+.job-label:not(:first-child) {
+  margin-left: 10px;
+}
+
+.place {
+  font: inherit;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  max-width: 220px;
+}
+
+.place b {
+  font-size: 13px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
+.place span {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.place:hover,
+.quick:hover {
+  border-color: var(--accent);
+}
+
+.place.here {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.place.here b::before {
+  content: "\25CF ";
+  color: var(--accent);
+}
+
+.quick {
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.device-table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 6px 0;
+}
+
+.device-table td {
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.device-table select {
+  font: inherit;
+  font-size: 13px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+}
+
 @media (max-width: 860px) {
   .topbar {
     padding: 6px 10px;
@@ -1445,5 +1604,18 @@ details.why summary,
 
   .view-head .strip {
     justify-content: flex-start;
+  }
+
+  .job-blurb {
+    display: none;
+  }
+
+  .job-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .app[data-pane="left"] .jobbar {
+    display: none;
   }
 }

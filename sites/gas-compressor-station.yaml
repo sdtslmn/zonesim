@@ -61,7 +61,7 @@ hosts:
 # all, and a port forward for the compressor maker.
 zones:
   - { name: internet, description: Everything outside the company, hosts: [oem-remote] }
-  - { name: wan, description: The pipeline control centre across the company WAN, hosts: [occ-scada] }
+  - { name: wan, port: wan2, description: The pipeline control centre across the company WAN, hosts: [occ-scada] }
   - name: station
     description: "The whole station network as found: office and plant on one flat network"
     hosts: [corp-pc, hist-dmz, jump-01, historian, hmi-1, ews-1, ucp-1, esd-1, fc-1]
@@ -76,6 +76,27 @@ conduits:
     zones: [wan, station]
     rules:
       - allow from occ-scada to station any
+
+# The station firewall and two switches: a Cisco switch in the office and
+# server room, and a Hirschmann switch in the control room cabinet. Outside
+# links come in on firewall ports (internet on wan1, the company WAN on wan2).
+network:
+  firewall: { name: fw-01, vendor: fortinet, model: FortiGate Rugged 60F, firmware: v7.4.4, hostname: FGR60F-KESTREL, ip: 192.168.250.1 }
+  switches:
+    - name: sw-office
+      vendor: cisco
+      model: IE-3400
+      firmware: 17.9.4
+      hostname: SW-KESTREL-OFFICE
+      ip: 192.168.250.11
+      ports: { Gi1/1: corp-pc, Gi1/2: hist-dmz, Gi1/3: jump-01, Gi1/4: historian, Gi1/5: null, Gi1/6: null }
+    - name: sw-plant
+      vendor: hirschmann
+      model: RSP35
+      firmware: 09.4.03
+      hostname: SW-KESTREL-PLANT
+      ip: 192.168.250.12
+      ports: { "1/1": hmi-1, "1/2": ews-1, "1/3": ucp-1, "1/4": esd-1, "1/5": fc-1, "1/6": null, "1/7": null }
 
 devices:
   ucp-1:

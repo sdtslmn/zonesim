@@ -57,6 +57,7 @@ export class LabSession {
       const code = await this.shell.exec(cmd, { ...this.quietIO(), stderr: (t) => (err += t) });
       if (code !== 0) errors.push(`${cmd}: ${err.trim() || `exit code ${code}`}`);
       this.shell.stack.length = 0;
+      this.shell.session = undefined;
     }
     this.sim.settle(this.lab?.settle ?? 0);
     return errors;
@@ -86,13 +87,16 @@ export class LabSession {
     if (c.command !== undefined) {
       let out = "";
       const saved = [...this.shell.stack];
+      const session = this.shell.session;
       this.shell.stack.length = 0;
+      this.shell.session = undefined;
       let code: number;
       try {
         code = await this.shell.exec(c.command, this.quietIO((t) => (out += t)));
       } finally {
         this.shell.stack.length = 0;
         this.shell.stack.push(...saved);
+        this.shell.session = session;
       }
       const plain = out.replace(/\x1b\[[0-9;]*m/g, "");
       if (c.exitCode !== undefined && code !== c.exitCode) return fail(`exit code ${code}`);

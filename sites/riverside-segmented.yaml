@@ -21,11 +21,11 @@ hosts:
 
 zones:
   - { name: site, remove: true }
-  - { name: enterprise, sl: 1, description: Office IT, hosts: [corp-pc] }
-  - { name: dmz, sl: 2, description: "Between IT and OT: report copy and remote access", hosts: [hist-dmz, jump-01] }
-  - { name: operations, sl: 2, description: Site operations, hosts: [historian] }
-  - { name: control, sl: 3, description: Supervisory control and the PLC, hosts: [hmi-01, ews-01, plc-1] }
-  - { name: safety, sl: 3, description: "The safety instrumented system, on its own", hosts: [sis-1] }
+  - { name: enterprise, sl: 1, vlan: 40, description: Office IT, hosts: [corp-pc] }
+  - { name: dmz, sl: 2, vlan: 35, description: "Between IT and OT: report copy and remote access", hosts: [hist-dmz, jump-01] }
+  - { name: operations, sl: 2, vlan: 30, description: Site operations, hosts: [historian] }
+  - { name: control, sl: 3, vlan: 20, description: Supervisory control and the PLC, hosts: [hmi-01, ews-01, plc-1] }
+  - { name: safety, sl: 3, vlan: 10, description: "The safety instrumented system, on its own", hosts: [sis-1] }
 
 conduits:
   - { name: edge, remove: true }

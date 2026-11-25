@@ -5,7 +5,7 @@
 // schema/site.schema.json is generated from this file by scripts/build-schema.mjs.
 
 import { PROCESS_MODELS } from "./process/index.js";
-import { LEVELS, SITE_SCHEMA, SITE_SERVICES, HOST_KINDS } from "./site.js";
+import { LEVELS, SITE_SCHEMA, SITE_SERVICES, HOST_KINDS, FIREWALL_VENDORS, SWITCH_VENDORS } from "./site.js";
 import { TABLES } from "./modbus.js";
 
 const NAME = { type: "string", pattern: "^[a-z][a-z0-9-]{0,23}$" };
@@ -99,6 +99,8 @@ export function siteJsonSchema(): Record<string, unknown> {
             remove: { type: "boolean" },
             description: { type: "string" },
             sl: { enum: [1, 2, 3, 4], description: "Target security level (SL-T)" },
+            vlan: { type: "integer", minimum: 1, maximum: 4042, description: "The VLAN that carries the zone on the plant switches. Picked for you when left out." },
+            port: { type: "string", description: "A firewall port that carries the zone instead of a VLAN, for example wan1 for an outside link" },
             hosts: { type: "array", items: NAME },
           },
         },
@@ -114,6 +116,47 @@ export function siteJsonSchema(): Record<string, unknown> {
             remove: { type: "boolean" },
             zones: { type: "array", items: NAME, minItems: 2, maxItems: 2 },
             rules: { type: "array", items: { type: "string", description: "allow|deny from SRC to DST SERVICE [fc LIST]" } },
+          },
+        },
+      },
+      network: {
+        type: "object",
+        description: "The firewall and switches that carry the zones. Hosts left off every switch go on the first one.",
+        additionalProperties: false,
+        properties: {
+          firewall: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              name: NAME,
+              vendor: { enum: [...FIREWALL_VENDORS] },
+              model: { type: "string" },
+              firmware: { type: "string" },
+              hostname: { type: "string" },
+              ip: { type: "string", description: "Management address" },
+              otSignatures: { type: "boolean", description: "OT application signatures loaded, so the firewall can filter Modbus function codes. Default true." },
+            },
+          },
+          switches: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["name"],
+              additionalProperties: false,
+              properties: {
+                name: NAME,
+                vendor: { enum: [...SWITCH_VENDORS] },
+                model: { type: "string" },
+                firmware: { type: "string" },
+                hostname: { type: "string" },
+                ip: { type: "string", description: "Management address" },
+                ports: {
+                  type: "object",
+                  description: 'Port to host, for example "1/3": hmi-01 (Hirschmann) or Gi1/3: hmi-01 (Cisco). Leave the host empty for a spare port.',
+                  additionalProperties: { anyOf: [NAME, { type: "null" }] },
+                },
+              },
+            },
           },
         },
       },

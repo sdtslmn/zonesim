@@ -8,6 +8,7 @@ import type { FileSystem } from "./fs.js";
 import { normalizePath, validFileName } from "./fs.js";
 import type { Sim } from "./sim.js";
 import type { Host } from "./network.js";
+import type { DeviceSession } from "./devices/session.js";
 import { C, UserError } from "./util.js";
 
 export interface IO {
@@ -146,10 +147,15 @@ export function quote(words: string[]): string {
   return words.map((w) => (/^[\w@%+=:,./-]+$/.test(w) ? w : `'${w.replace(/'/g, `'\\''`)}'`)).join(" ");
 }
 
+/** Lab commands that still work while you are on a network device. */
+const LAB_WORDS = new Set(["labs", "lab", "task", "tasks", "check", "hint", "solution", "sandbox"]);
+
 export class Shell {
   /** Hosts you are logged in to, innermost last. Empty means the console. */
   readonly stack: string[] = [];
   readonly commands = new Map<string, CommandSpec>();
+  /** A terminal session on a switch or the firewall, when you are on one. */
+  session?: DeviceSession;
   /** Set when exit is typed on the console. */
   exitRequested = false;
   lastCode = 0;
@@ -169,6 +175,7 @@ export class Shell {
   }
 
   prompt(): string {
+    if (this.session) return this.session.prompt();
     const h = this.host;
     if (!h) return `${C.green("console")}:${C.cyan("~")}$ `;
     const user = h.user || "admin";
@@ -177,6 +184,7 @@ export class Shell {
 
   /** Command names available where you are, for tab completion. */
   available(): string[] {
+    if (this.session) return this.session.words();
     const here = this.host ? "host" : "console";
     return [...this.commands.entries()].filter(([, s]) => s.where === "both" || s.where === here).map(([n]) => n).sort();
   }
@@ -186,6 +194,11 @@ export class Shell {
     let code = 0;
     for (const raw of input.replace(/\r/g, "").split("\n")) {
       const line = raw.trim();
+      if (this.session && !LAB_WORDS.has(line.split(/\s+/)[0])) {
+        code = this.deviceLine(line, io);
+        this.lastCode = code;
+        continue;
+      }
       if (!line || line.startsWith("#")) continue;
       try {
         code = await this.runLine(line, io);
@@ -199,6 +212,51 @@ export class Shell {
       if (this.exitRequested) break;
     }
     return code;
+  }
+
+  /**
+   * A line typed on a network device. The device's own CLI handles it; a
+   * trailing "| include TEXT" (or grep, exclude, begin) filters the output
+   * the way IOS, HiOS and FortiOS do.
+   */
+  private deviceLine(line: string, io: IO): number {
+    const s = this.session!;
+    if (!line) return 0;
+    let filter: ((l: string) => boolean) | undefined;
+    let begin: string | undefined;
+    const m = line.match(/^(.*?)\s*\|\s*(include|inc|i|grep|exclude|exc|e|begin|beg|b)\s+(.+)$/i);
+    let cmd = line;
+    if (m) {
+      cmd = m[1];
+      const word = m[2].toLowerCase();
+      const raw = m[3].trim();
+      const v = raw.replace(/^-[iv]\s+/, "").replace(/^["']|["']$/g, "");
+      const ci = /^-i\s/.test(raw);
+      const has = (l: string) => (ci ? l.toLowerCase().includes(v.toLowerCase()) : l.includes(v));
+      if (word.startsWith("e") || /^-v\s/.test(raw)) filter = (l) => !has(l);
+      else if (word.startsWith("b")) begin = v;
+      else filter = has;
+    }
+    let buf = "";
+    let failed = false;
+    this.sim.advance();
+    s.run(cmd, (t) => {
+      buf += t;
+      if (/^(Error|% |Command fail|command parse error|Unknown action)/m.test(t)) failed = true;
+    });
+    this.sim.advance();
+    if (filter || begin !== undefined) {
+      const lines = buf.replace(/\n$/, "").split("\n");
+      const start = begin !== undefined ? lines.findIndex((l) => l.includes(begin!)) : 0;
+      buf = (start < 0 ? [] : lines.slice(start)).filter((l) => !filter || filter(l)).join("\n");
+      if (buf) buf += "\n";
+    }
+    if (buf) (failed ? io.stderr : io.stdout)(buf);
+    if (s.done) {
+      this.session = undefined;
+      io.stdout(`Connection to ${s.device.name} (${s.device.ip}) closed.\n`);
+    }
+    return failed ? 1 : 0;
   }
 
   private async runLine(line: string, io: IO): Promise<number> {
@@ -261,6 +319,22 @@ export class Shell {
     this.sim.advance();
     const code = await spec.run(args, { io, stdin, shell: this, sim: this.sim, host: this.host });
     this.sim.advance();
+    return code;
+  }
+
+  /** Run device commands in a session and leave it (ssh DEVICE <commands>). Commands split on ";". */
+  runOnDevice(session: DeviceSession, line: string, io: IO): number {
+    const saved = this.session;
+    this.session = session;
+    let code = 0;
+    try {
+      for (const part of line.split(/;|\n/)) {
+        if (!this.session) break;
+        code = this.deviceLine(part.trim(), io) || code;
+      }
+    } finally {
+      this.session = saved;
+    }
     return code;
   }
 

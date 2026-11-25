@@ -5,6 +5,7 @@ export { Controller } from "./device.js";
 export { PROCESS_MODELS, WaterTank, WATER_TANK, GasCompressor, GAS_COMPRESSOR, DcCooling, DC_COOLING, type ProcessModel, type ProcessModelType, type SignalSpec, type ParamSpec, type PlantAlarm, type Readout, type ReadoutState, type TrendSpec } from "./process/index.js";
 export { Network, SERVICES, SERVICE_NAMES, LEVEL_NAMES, ruleText, endpointText, type Host, type Zone, type Conduit, type Rule, type Endpoint, type Verdict, type ServiceName } from "./network.js";
 export { requiredFlowStatus, riskChecks, RISK_IDS, type FlowStatus, type RiskCheck } from "./checks.js";
+export { withSwitchVendor, SWITCH_DEFAULTS, SWITCH_VENDORS, FIREWALL_VENDORS, type SwitchVendor, type FirewallVendor } from "./site.js";
 export { loadSite, unknownFields, parseSiteText, renameInSite, hostByRole, siteCompatible, flowTitle, SITE_SCHEMA, LEVELS, SITE_SERVICES, type Site, type SiteHost, type SiteDevice, type SitePoint, type SiteFlow, type SiteLoadResult } from "./site.js";
 export { BUILTIN_SITE_FILES, SITE_TEMPLATES, DEFAULT_SITE, builtinSite, builtinSiteIds, loadSiteFile, verifySite } from "./sites/index.js";
 export { Shell, tokenize, quote, type IO, type CommandFn, type CmdContext } from "./shell.js";
@@ -17,3 +18,5 @@ export { validateLabOnSite, validateLabsOnSite, type LabFit } from "./labs/valid
 export { Trainer, CONSOLE_HELP, hostHelp, type TrainerOptions } from "./trainer.js";
 export { C, stripAnsi, table, clock, wrapText, termMd, reflow, UserError } from "./util.js";
 export { siteJsonSchema } from "./site-schema.js";
+export { Infra, MODBUS_SIGNATURES, type NetDevice, type SwitchDevice, type FirewallDevice } from "./infra.js";
+export { openSession, cliName, vendorName, type DeviceSession } from "./devices/index.js";

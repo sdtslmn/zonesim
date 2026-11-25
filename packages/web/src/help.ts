@@ -5,7 +5,7 @@
 const raw = import.meta.glob("../../../docs/help/*.md", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
 /** Pages in reading order. */
-const ORDER = ["getting-started.md", "commands.md", "concepts.md", "modbus.md", "customize.md", "faq.md"];
+const ORDER = ["getting-started.md", "commands.md", "devices.md", "concepts.md", "modbus.md", "customize.md", "faq.md"];
 
 export interface HelpPage {
   file: string;

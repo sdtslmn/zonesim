@@ -83,7 +83,7 @@ export class NetworkMap {
       this.flights = [];
     }
     const alerting = [...new Set(sim.alerts.filter((a) => !a.acked && a.source === "ids" && a.src).map((a) => a.src!))].sort();
-    const sig = JSON.stringify([sim.net.hosts.map((h) => [h.name, h.zone, h.mfa]), sim.net.zones, sim.net.conduits.map((c) => [c.name, c.zones, c.rules.length]), this.selected, alerting]);
+    const sig = JSON.stringify([sim.net.hosts.map((h) => [h.name, h.zone, h.mfa, h.link]), sim.net.zones, sim.net.conduits.map((c) => [c.name, c.zones, c.rules.length]), this.selected, alerting]);
     if (sig !== this.signature) {
       this.signature = sig;
       const holder = this.el.querySelector<HTMLElement>("#map-svg")!;
@@ -122,7 +122,7 @@ export class NetworkMap {
         const perBand = new Map<number, Host[]>();
         for (const h of x.hosts) perBand.set(band(h), [...(perBand.get(band(h)) ?? []), h]);
         const cols = Math.max(...[...perBand.values()].map((l) => l.length));
-        const label = `${x.z.name}${x.z.sl ? ` · SL-T ${x.z.sl}` : ""}`;
+        const label = `${x.z.name}${x.z.sl ? ` · SL-T ${x.z.sl}` : ""}${carrier(x.z)}`;
         return { ...x, top, bottom, perBand, w: Math.max(PAD * 2 + cols * CHIP_W + (cols - 1) * GAP, 18 + label.length * 6.9) };
       })
       .sort((a, b) => a.top - b.top || a.z.name.localeCompare(b.z.name));
@@ -162,7 +162,7 @@ export class NetworkMap {
     // Zones
     for (const p of placed) {
       const z = net.zone(p.name)!;
-      parts.push(`<g class="zone"><rect x="${p.box.x}" y="${p.box.y}" width="${p.box.w}" height="${p.box.h}" rx="8"/><text x="${p.box.x + 8}" y="${p.box.y + 15}" class="zone-name">${esc(z.name)}${z.sl ? ` · SL-T ${z.sl}` : ""}</text></g>`);
+      parts.push(`<g class="zone"><rect x="${p.box.x}" y="${p.box.y}" width="${p.box.w}" height="${p.box.h}" rx="8"/><text x="${p.box.x + 8}" y="${p.box.y + 15}" class="zone-name">${esc(z.name)}${z.sl ? ` · SL-T ${z.sl}` : ""}<tspan class="zone-carrier">${esc(carrier(z))}</tspan></text></g>`);
     }
 
     // Conduits. A conduit between two zones with another zone in the way is
@@ -215,9 +215,9 @@ export class NetworkMap {
     for (const h of net.hosts) {
       const b = this.chips.get(h.name);
       if (!b) continue;
-      const cls = `host k-${h.kind}${this.selected === h.name ? " sel" : ""}${alerting.includes(h.name) ? " alerting" : ""}`;
+      const cls = `host k-${h.kind}${this.selected === h.name ? " sel" : ""}${alerting.includes(h.name) ? " alerting" : ""}${h.link ? "" : " down"}`;
       const lock = h.mfa ? `<text x="${b.x + b.w - 28}" y="${b.y + 14}" class="mfa">MFA</text>` : "";
-      hostParts.push(`<g class="${cls}" data-host="${esc(h.name)}"><rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="6"/><text x="${b.x + 8}" y="${b.y + 14}" class="host-name">${esc(h.name)}</text><text x="${b.x + 8}" y="${b.y + 27}" class="host-ip">${esc(h.ip)}</text>${lock}<title>${esc(`${h.name} (${h.ip})\n${h.description}\nservices: ${h.services.join(", ") || "none"}`)}</title></g>`);
+      hostParts.push(`<g class="${cls}" data-host="${esc(h.name)}"><rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="6"/><text x="${b.x + 8}" y="${b.y + 14}" class="host-name">${esc(h.name)}</text><text x="${b.x + 8}" y="${b.y + 27}" class="host-ip">${esc(h.ip)}</text>${lock}<title>${esc(`${h.name} (${h.ip})\n${h.description}\nservices: ${h.services.join(", ") || "none"}${h.port ? `\nswitch port: ${h.port.device} ${h.port.port}` : ""}${h.link ? "" : `\nlink down: ${h.linkReason ?? ""}`}`)}</title></g>`);
     }
 
     if (empty.length) {
@@ -249,7 +249,7 @@ export class NetworkMap {
     const rows = convs.map((c) => `<tr><td>${esc(c.src)} → ${esc(c.dst)}</td><td>${esc(c.service)}${c.fcs.length ? ` fc ${c.fcs.join(",")}` : ""}</td><td>${c.background ? "plant" : "you"}</td><td class="${c.lastOk ? "ok-text" : "bad-text"}">${c.lastOk ? "ok" : "blocked"}</td></tr>`).join("");
     const services = h.services.map((s) => `${s} (${SERVICES[s].label})`).join(", ") || "none";
     const shell = h.kind === "ot" && h.level <= 1 ? `Controllers have no shell: talk to it with <code>modbus</code> from a host.` : `Run commands from it: <code>ssh ${esc(h.name)}</code>`;
-    const html = `<div class="host-detail"><strong>${esc(h.name)}</strong> <span class="meta">${esc(h.ip)} · L${h.level} ${esc(LEVEL_NAMES[String(h.level)] ?? "")} · zone ${esc(h.zone)}</span>
+    const html = `<div class="host-detail"><strong>${esc(h.name)}</strong> <span class="meta">${esc(h.ip)} · L${h.level} ${esc(LEVEL_NAMES[String(h.level)] ?? "")} · zone ${esc(h.zone)}${h.port ? ` · ${esc(h.port.device)} port ${esc(h.port.port)}` : ""}</span>${h.link ? "" : `<div class="bad-text">Link down: ${esc(h.linkReason ?? "")}</div>`}
       <div>${esc(h.description)}. ${esc(h.os)}.${h.role ? ` <span class="meta">Role: ${esc(h.role)}</span>` : ""}</div>
       <div class="meta">Services: ${esc(services)}${h.services.includes("rdp") || h.services.includes("ssh") ? ` · MFA ${h.mfa ? "on" : "off"}` : ""}</div>
       <div class="meta">${shell}</div>
@@ -345,6 +345,11 @@ export class NetworkMap {
     for (const el of [...layer.children]) if (!this.flights.some((f) => f.el === el)) el.remove();
     if (this.flights.length) this.raf = requestAnimationFrame(() => this.frame());
   }
+}
+
+/** What carries a zone, for its label: a VLAN on the switches or a firewall port. */
+function carrier(z: { vlan?: number; port?: string }): string {
+  return z.vlan !== undefined ? ` · VLAN ${z.vlan}` : z.port ? ` · ${z.port}` : "";
 }
 
 /** Connection points on two boxes, facing each other, and whether the link is vertical. */

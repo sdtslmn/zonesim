@@ -67,6 +67,18 @@ conduits:
       - allow from chiller-vendor to bms-01 rdp
       - allow from customer to portal https
 
+# The facility firewall and one Cisco industrial switch in the BMS cabinet.
+network:
+  firewall: { name: fw-01, vendor: fortinet, model: FortiGate Rugged 60F, firmware: v7.4.4, hostname: FGR60F-HARBOUR, ip: 192.168.250.1 }
+  switches:
+    - name: sw-01
+      vendor: cisco
+      model: IE-3400
+      firmware: 17.9.4
+      hostname: SW-HARBOUR-BMS
+      ip: 192.168.250.11
+      ports: { Gi1/1: corp-pc, Gi1/2: portal, Gi1/3: jump-01, Gi1/4: dcim-01, Gi1/5: bms-01, Gi1/6: ews-01, Gi1/7: cpc-1, Gi1/8: fp-1, Gi1/9: pm-1, Gi1/10: null }
+
 devices:
   cpc-1:
     title: chiller plant controller

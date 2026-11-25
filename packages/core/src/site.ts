@@ -50,6 +50,42 @@ export interface SiteZone {
   description?: string;
   sl?: number;
   hosts: string[];
+  /** VLAN on the plant switches. */
+  vlan?: number;
+  /** A firewall port instead of a VLAN, for the internet or a WAN link. */
+  port?: string;
+}
+
+export const FIREWALL_VENDORS = ["fortinet"] as const;
+export const SWITCH_VENDORS = ["hirschmann", "cisco"] as const;
+export type FirewallVendor = (typeof FIREWALL_VENDORS)[number];
+export type SwitchVendor = (typeof SWITCH_VENDORS)[number];
+
+export interface SiteFirewall {
+  name: string;
+  vendor: FirewallVendor;
+  model: string;
+  firmware: string;
+  hostname: string;
+  ip: string;
+  /** OT application signatures loaded (FortiGate: config ips global, exclude-signatures none). */
+  otSignatures: boolean;
+}
+
+export interface SiteSwitch {
+  name: string;
+  vendor: SwitchVendor;
+  model: string;
+  firmware: string;
+  hostname: string;
+  ip: string;
+  /** Ports in order; host is empty for a spare port. */
+  ports: { id: string; host?: string }[];
+}
+
+export interface SiteNetwork {
+  firewall: SiteFirewall;
+  switches: SiteSwitch[];
 }
 
 export interface SiteConduit {
@@ -91,6 +127,8 @@ export interface Site {
   zones: SiteZone[];
   conduits: SiteConduit[];
   devices: Record<string, SiteDevice>;
+  /** Firewall and switches. Generated when the site file has none. */
+  network: SiteNetwork;
   hmi?: { host: string; device: string; timeout: number };
   polling: SitePoll[];
   flows: SiteFlow[];
@@ -182,9 +220,38 @@ function mergeSite(base: Raw, over: Raw): Raw {
       case "hmi":
         out.hmi = { ...(isObj(base.hmi) ? base.hmi : {}), ...(isObj(value) ? value : {}) };
         break;
+      case "network": {
+        const b = isObj(base.network) ? base.network : {};
+        const v = isObj(value) ? value : {};
+        out.network = {
+          ...b,
+          ...v,
+          firewall: { ...(isObj(b.firewall) ? b.firewall : {}), ...(isObj(v.firewall) ? v.firewall : {}) },
+          switches: v.switches === undefined ? clone(b.switches) : mergeNamed(b.switches, v.switches, "name"),
+        };
+        // A switch that changes brand without naming a model gets that brand's default model.
+        if (Array.isArray(v.switches) && Array.isArray(b.switches)) {
+          for (const sw of v.switches) {
+            if (!isObj(sw) || sw.vendor === undefined) continue;
+            const before = b.switches.find((x) => isObj(x) && x.name === sw.name) as Raw | undefined;
+            const merged = (out.network as Raw).switches as Raw[];
+            const m = merged.find((x) => isObj(x) && x.name === sw.name);
+            if (m && before && before.vendor !== sw.vendor) {
+              if (sw.model === undefined) delete m.model;
+              if (sw.firmware === undefined) delete m.firmware;
+            }
+          }
+        }
+        break;
+      }
       default:
         out[key] = clone(value);
     }
+  }
+  // A removed host frees its switch port.
+  const removed = new Set((Array.isArray(over.hosts) ? over.hosts : []).filter((h): h is Raw => isObj(h) && h.remove === true).map((h) => h.name));
+  if (removed.size && isObj(out.network) && Array.isArray(out.network.switches)) {
+    for (const sw of out.network.switches) if (isObj(sw) && isObj(sw.ports)) for (const [k, v] of Object.entries(sw.ports)) if (removed.has(v)) sw.ports[k] = null;
   }
   return out;
 }
@@ -215,6 +282,9 @@ export function renameInSite(site: Raw, map: Record<string, string>, errors: str
   }
   if (isObj(out.devices)) out.devices = Object.fromEntries(Object.entries(out.devices).map(([k, v]) => [r(k) as string, v]));
   if (isObj(out.hmi)) out.hmi = { ...out.hmi, host: r(out.hmi.host), device: r(out.hmi.device) };
+  if (isObj(out.network) && Array.isArray(out.network.switches)) {
+    for (const sw of out.network.switches as Raw[]) if (isObj(sw.ports)) sw.ports = Object.fromEntries(Object.entries(sw.ports).map(([k, v]) => [k, r(v)]));
+  }
   if (Array.isArray(out.polling)) out.polling = (out.polling as unknown[]).map(rHop);
   if (Array.isArray(out.flows)) {
     out.flows = (out.flows as Raw[]).map((f) => ({
@@ -408,8 +478,31 @@ function normalize(raw: Raw, chain: string[], c: Checker): Site | undefined {
       else if (placed.has(m)) c.errors.push(`${w}: host ${m} is already in zone ${placed.get(m)}; a host is in exactly one zone`);
       else placed.set(m, zn);
     }
-    zones.push({ name: zn, description: z.description === undefined ? undefined : c.str(z.description, `${w}.description`), sl, hosts: members });
+    const vlan = z.vlan === undefined ? undefined : c.num(z.vlan, `${w}.vlan`);
+    if (vlan !== undefined && (!Number.isInteger(vlan) || vlan < 1 || vlan > 4042)) c.errors.push(`${w}: vlan must be a whole number from 1 to 4042`);
+    if (vlan !== undefined && zones.some((x) => x.vlan === vlan)) c.errors.push(`${w}: VLAN ${vlan} is already used by zone ${zones.find((x) => x.vlan === vlan)!.name}`);
+    const port = z.port === undefined ? undefined : c.str(z.port, `${w}.port`);
+    if (port !== undefined && vlan !== undefined) c.errors.push(`${w}: give a zone either a vlan or a firewall port, not both`);
+    zones.push({ name: zn, description: z.description === undefined ? undefined : c.str(z.description, `${w}.description`), sl, hosts: members, ...(vlan !== undefined ? { vlan } : {}), ...(port ? { port } : {}) });
   });
+  // Zones of outside hosts are firewall ports; the others are VLANs. The first VLAN zone without a number is VLAN 1, as found on most plants.
+  let wan = 1;
+  for (const z of zones) {
+    if (z.vlan !== undefined || z.port) continue;
+    const members = z.hosts.map(host).filter((h): h is SiteHost => !!h);
+    if (members.length && members.every((h) => h.kind === "external")) {
+      while (zones.some((x) => x.port === `wan${wan}`)) wan++;
+      z.port = `wan${wan++}`;
+    }
+  }
+  for (const z of zones) {
+    if (z.vlan !== undefined || z.port) continue;
+    if (!zones.some((x) => x.vlan === 1)) z.vlan = 1;
+    else for (let v = 10; v < 4090; v += 10) if (!zones.some((x) => x.vlan === v)) {
+      z.vlan = v;
+      break;
+    }
+  }
   for (const h of hosts) if (h.name && !placed.has(h.name)) c.errors.push(`host ${h.name} is not in any zone`);
 
   // conduits
@@ -554,6 +647,8 @@ function normalize(raw: Raw, chain: string[], c: Checker): Site | undefined {
   for (const x of identify) if (!host(x)) c.errors.push(`ids.identify: there is no host "${x}"`);
 
   if (c.errors.length) return undefined;
+  const network = normalizeNetwork(raw.network, hosts, zones, c);
+
   return {
     id,
     name,
@@ -564,11 +659,123 @@ function normalize(raw: Raw, chain: string[], c: Checker): Site | undefined {
     zones,
     conduits,
     devices,
+    network,
     hmi,
     polling,
     flows,
     ids: { writers, safety, identify },
   };
+}
+
+/** The model and firmware a switch gets when the site file does not say. */
+export const SWITCH_DEFAULTS: Record<SwitchVendor, { model: string; firmware: string }> = {
+  hirschmann: { model: "RSP35", firmware: "09.4.03" },
+  cisco: { model: "IE-3400", firmware: "17.9.4" },
+};
+
+/** A copy of the site with one switch made by another vendor: same cabling, that vendor's port names and command line. */
+export function withSwitchVendor(site: Site, name: string, vendor: SwitchVendor): Site {
+  const sw = site.network.switches.find((s) => s.name === name);
+  if (!sw || sw.vendor === vendor || !SWITCH_VENDORS.includes(vendor)) return site;
+  const copy: Site = JSON.parse(JSON.stringify(site));
+  const c = copy.network.switches.find((s) => s.name === name)!;
+  c.vendor = vendor;
+  c.model = SWITCH_DEFAULTS[vendor].model;
+  c.firmware = SWITCH_DEFAULTS[vendor].firmware;
+  c.ports = c.ports.map((p) => ({ ...p, id: normalizePort(vendor, p.id) ?? p.id }));
+  return copy;
+}
+
+const PORT_RE: Record<SwitchVendor, RegExp> = { hirschmann: /^\d{1,2}\/\d{1,2}$/, cisco: /^Gi\d{1,2}\/\d{1,2}$/ };
+
+/** Port names as each vendor writes them. */
+export function portName(vendor: SwitchVendor, n: number): string {
+  return vendor === "cisco" ? `Gi1/${n}` : `1/${n}`;
+}
+
+/** Turn "GigabitEthernet1/3", "gi1/3" or "1/3" into the vendor's short form. */
+export function normalizePort(vendor: SwitchVendor, text: string): string | undefined {
+  const m = text.trim().match(/^(?:gigabitethernet|gi|g)?\s*(\d{1,2})\/(\d{1,2})$/i);
+  if (!m) return undefined;
+  return vendor === "cisco" ? `Gi${m[1]}/${m[2]}` : `${m[1]}/${m[2]}`;
+}
+
+function normalizeNetwork(rawNet: unknown, hosts: SiteHost[], zones: SiteZone[], c: Checker): SiteNetwork {
+  const n = isObj(rawNet) ? rawNet : {};
+  const fwRaw = isObj(n.firewall) ? n.firewall : {};
+  const vendor = (fwRaw.vendor ?? "fortinet") as FirewallVendor;
+  if (!FIREWALL_VENDORS.includes(vendor)) c.errors.push(`network.firewall.vendor "${String(fwRaw.vendor)}" is not supported yet. Supported: ${FIREWALL_VENDORS.join(", ")}`);
+  const fwName = typeof fwRaw.name === "string" ? fwRaw.name : "fw-1";
+  const firewall: SiteFirewall = {
+    name: fwName,
+    vendor,
+    model: typeof fwRaw.model === "string" ? fwRaw.model : "FortiGate Rugged 60F",
+    firmware: typeof fwRaw.firmware === "string" ? fwRaw.firmware : "v7.4.4",
+    hostname: typeof fwRaw.hostname === "string" ? fwRaw.hostname : "FGR60F-PLANT",
+    ip: typeof fwRaw.ip === "string" ? fwRaw.ip : "192.168.250.1",
+    otSignatures: fwRaw.otSignatures !== false,
+  };
+  if (!IP_RE.test(firewall.ip)) c.errors.push(`network.firewall.ip "${firewall.ip}" is not an IPv4 address`);
+  const names = new Set(hosts.map((h) => h.name));
+  if (names.has(firewall.name)) c.errors.push(`network.firewall: "${firewall.name}" is also a host name`);
+  const onSwitch = new Map<string, string>();
+  const switches: SiteSwitch[] = [];
+  const external = new Set(zones.filter((z) => z.port).flatMap((z) => z.hosts));
+  if (Array.isArray(n.switches)) {
+    n.switches.forEach((sw, i) => {
+      const where = `network.switches[${i + 1}]`;
+      if (!isObj(sw)) return c.errors.push(`${where} must be a map`);
+      const name = c.str(sw.name, `${where}.name`);
+      const w = name ? `switch ${name}` : where;
+      if (name && !NAME_RE.test(name)) c.errors.push(`${w}: names use lower-case letters, digits and dashes`);
+      if (names.has(name) || name === firewall.name || switches.some((x) => x.name === name)) c.errors.push(`${w}: the name is already used`);
+      const v = (sw.vendor ?? "hirschmann") as SwitchVendor;
+      if (!SWITCH_VENDORS.includes(v)) c.errors.push(`${w}: vendor "${String(sw.vendor)}" is not supported yet. Supported: ${SWITCH_VENDORS.join(", ")}`);
+      const ports: { id: string; host?: string }[] = [];
+      if (isObj(sw.ports)) {
+        for (const [pid, h] of Object.entries(sw.ports)) {
+          const id = SWITCH_VENDORS.includes(v) ? normalizePort(v, pid) : pid;
+          if (!id || !PORT_RE[v]?.test(id)) {
+            c.errors.push(`${w}: port "${pid}" is not a ${v === "cisco" ? "Cisco port such as Gi1/3" : "Hirschmann port such as 1/3"}`);
+            continue;
+          }
+          if (ports.some((x) => x.id === id)) c.errors.push(`${w}: port ${id} is listed twice`);
+          if (h === null || h === undefined || h === "") {
+            ports.push({ id });
+            continue;
+          }
+          const hn = String(h);
+          if (!names.has(hn)) c.errors.push(`${w}: port ${id}: unknown host "${hn}"`);
+          else if (external.has(hn)) c.errors.push(`${w}: port ${id}: ${hn} is in a zone behind a firewall port, not on a plant switch`);
+          else if (onSwitch.has(hn)) c.errors.push(`${w}: port ${id}: ${hn} is already on ${onSwitch.get(hn)}`);
+          else onSwitch.set(hn, `${name} port ${id}`);
+          ports.push({ id, host: hn });
+        }
+      } else if (sw.ports !== undefined) c.errors.push(`${w}: ports must be a map of port to host, for example "1/1": hmi-01`);
+      switches.push({
+        name,
+        vendor: v,
+        model: typeof sw.model === "string" ? sw.model : (SWITCH_DEFAULTS[v] ?? SWITCH_DEFAULTS.hirschmann).model,
+        firmware: typeof sw.firmware === "string" ? sw.firmware : (SWITCH_DEFAULTS[v] ?? SWITCH_DEFAULTS.hirschmann).firmware,
+        hostname: typeof sw.hostname === "string" ? sw.hostname : name.toUpperCase(),
+        ip: typeof sw.ip === "string" ? sw.ip : `192.168.250.${11 + i}`,
+        ports,
+      });
+    });
+  }
+  // Hosts not on any switch go onto the first one, or onto a generated switch.
+  const loose = hosts.filter((h) => h.name && !external.has(h.name) && !onSwitch.has(h.name));
+  if (loose.length) {
+    let sw = switches[0];
+    if (!sw) {
+      sw = { name: "sw-1", vendor: "hirschmann", model: "RSP35", firmware: "09.4.03", hostname: "SW-1", ip: "192.168.250.11", ports: [] };
+      switches.push(sw);
+    }
+    let k = sw.ports.length;
+    for (const h of loose) sw.ports.push({ id: portName(sw.vendor, ++k), host: h.name });
+    if (!isObj(rawNet)) for (let i = 0; i < 2; i++) sw.ports.push({ id: portName(sw.vendor, ++k) });
+  }
+  return { firewall, switches };
 }
 
 /** Parse YAML text into an object, with readable errors. */
@@ -595,10 +802,13 @@ export interface LoadSiteOptions {
 
 // Field names, to catch typos such as "adress:" that would otherwise be ignored.
 const KEYS = {
-  top: ["schema", "id", "name", "description", "extends", "rename", "process", "hosts", "zones", "conduits", "devices", "hmi", "polling", "flows", "ids"],
+  top: ["schema", "id", "name", "description", "extends", "rename", "process", "hosts", "zones", "conduits", "devices", "network", "hmi", "polling", "flows", "ids"],
+  network: ["firewall", "switches"],
+  firewall: ["name", "vendor", "model", "firmware", "hostname", "ip", "otSignatures"],
+  switch: ["name", "remove", "vendor", "model", "firmware", "hostname", "ip", "ports"],
   process: ["model", "tags", "params"],
   host: ["name", "remove", "role", "ip", "level", "kind", "services", "os", "user", "description", "mfa"],
-  zone: ["name", "remove", "description", "sl", "hosts"],
+  zone: ["name", "remove", "description", "sl", "hosts", "vlan", "port"],
   conduit: ["name", "remove", "zones", "rules"],
   device: ["remove", "title", "vendor", "product", "revision", "points"],
   point: ["addr", "tag", "signal", "description", "units"],
@@ -641,6 +851,11 @@ export function unknownFields(raw: Raw): string[] {
   if (Array.isArray(raw.flows))
     for (const f of raw.flows) if (isObj(f) && Array.isArray(f.paths)) for (const p of f.paths) list(p, KEYS.hop, `flow ${String(f.id)} hop`, (_x, i) => String(i + 1));
   check(raw.hmi, KEYS.hmi, "hmi");
+  check(raw.network, KEYS.network, "network");
+  if (isObj(raw.network)) {
+    check(raw.network.firewall, KEYS.firewall, "network.firewall");
+    list(raw.network.switches, KEYS.switch, "switch", (x, i) => String(x.name ?? i + 1));
+  }
   check(raw.ids, KEYS.ids, "ids");
   if (isObj(raw.devices))
     for (const [name, d] of Object.entries(raw.devices)) {
