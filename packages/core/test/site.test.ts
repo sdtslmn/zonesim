@@ -98,3 +98,17 @@ describe("site file help", () => {
     expect(file).toEqual(siteJsonSchema());
   });
 });
+
+describe("riverside-segmented", () => {
+  it("starts from the finished design: every data flow works and every check passes", () => {
+    const site = builtinSite("riverside-segmented");
+    expect(site.extends).toEqual(["riverside-water"]);
+    const sim = new Sim({ site, clock: () => 0 });
+    sim.settle(10);
+    expect(sim.requiredFlows().filter((f) => !f.ok)).toEqual([]);
+    expect(sim.risks().filter((r) => !r.ok)).toEqual([]);
+    expect(sim.net.needHost("jump-01").mfa).toBe(true);
+    expect(sim.net.zones.map((z) => z.name).sort()).toEqual(["control", "dmz", "enterprise", "internet", "operations", "safety"]);
+    expect(sim.hmiOnline).toBe(true);
+  });
+});

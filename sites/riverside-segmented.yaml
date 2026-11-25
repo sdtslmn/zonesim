@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../schema/site.schema.json
+#
+# Riverside after the work: the same plant as riverside-water, segmented into
+# IEC 62443 zones and conduits. It is the design lab S02 builds, and a
+# reference to compare your own design with. The labs start from the flat
+# plant, so most of them run on riverside-water instead.
+
+schema: zonesim-site/1
+id: riverside-segmented
+name: Riverside, segmented
+description: >-
+  The Riverside plant with a finished zone and conduit design: office, DMZ,
+  operations, control and safety zones, least-privilege conduits, Modbus
+  function code filtering, and vendor access through a jump host with MFA.
+  Use it to explore the target architecture. Most labs start from the flat
+  plant, so they run on riverside-water.
+extends: riverside-water
+
+hosts:
+  - { name: jump-01, mfa: true }
+
+zones:
+  - { name: site, remove: true }
+  - { name: enterprise, sl: 1, description: Office IT, hosts: [corp-pc] }
+  - { name: dmz, sl: 2, description: "Between IT and OT: report copy and remote access", hosts: [hist-dmz, jump-01] }
+  - { name: operations, sl: 2, description: Site operations, hosts: [historian] }
+  - { name: control, sl: 3, description: Supervisory control and the PLC, hosts: [hmi-01, ews-01, plc-1] }
+  - { name: safety, sl: 3, description: "The safety instrumented system, on its own", hosts: [sis-1] }
+
+conduits:
+  - { name: edge, remove: true }
+  - name: inet-dmz
+    zones: [internet, dmz]
+    rules:
+      - allow from vendor-laptop to jump-01 rdp
+  - name: ent-dmz
+    zones: [enterprise, dmz]
+    rules:
+      - allow from corp-pc to hist-dmz https
+  - name: ops-dmz
+    zones: [operations, dmz]
+    rules:
+      - allow from historian to hist-dmz https
+  - name: dmz-control
+    zones: [dmz, control]
+    rules:
+      - allow from jump-01 to ews-01 rdp
+  - name: ops-control
+    zones: [operations, control]
+    rules:
+      - allow from historian to plc-1 modbus fc 3,4
+  - name: ops-safety
+    zones: [operations, safety]
+    rules:
+      - allow from historian to sis-1 modbus fc 2,4
+  - name: control-safety
+    zones: [control, safety]
+    rules:
+      - allow from hmi-01 to sis-1 modbus fc read

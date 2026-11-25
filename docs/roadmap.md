@@ -11,6 +11,8 @@
   checked against the chosen site and falls back to its own site when it does
   not fit
 - A JSON Schema for site files, for completion and checks in editors
+- A second built-in site, `riverside-segmented`: the same plant with the
+  finished zone and conduit design, as a reference
 - New layout: Labs, Help and Site on the left, map and plant on the top
   right, and the terminal docked at the bottom (resizable, foldable); stacked
   panels on phones

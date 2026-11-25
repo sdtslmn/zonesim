@@ -44,8 +44,10 @@ then reads "set the pump stop level (tank-plc holding register 1) to 70 %".
 
 ## How a site file works
 
-- `extends` names a built-in site to start from. Today that is
-  `riverside-water`. A site file without `extends` must describe everything.
+- `extends` names a built-in site to start from: `riverside-water` (the
+  flat plant as found) or `riverside-segmented` (the same plant with a
+  finished zone and conduit design). A site file without `extends` must
+  describe everything.
 - `rename` renames hosts or zones. Every reference is updated for you:
   zones, firewall rules, Modbus devices, data flows and the IDS baseline.
 - Lists are merged by name (hosts, zones, conduits) or id (flows). An item

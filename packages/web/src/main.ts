@@ -384,9 +384,11 @@ function sitePanel(): string {
   else if (!fits.length) labsHtml = `<p class="meta">All ${labs.length} labs were written for this site.</p>`;
   else {
     const ok = fits.filter((f) => f.ok).length;
-    labsHtml = `<p>${ok} of ${fits.length} labs run on this site.${ok < fits.length ? " The others run on the plant they were written for:" : ""}</p>`;
+    labsHtml = `<p>${ok} of ${fits.length} labs run on this site.${ok < fits.length ? " The others run on the plant they were written for." : ""}</p>`;
     const bad = fits.filter((f) => !f.ok);
-    if (bad.length) labsHtml += `<ul class="results">${bad.map((f) => `<li class="bad">${esc(f.lab.title)}<span class="detail">${esc(f.problems[0] ?? "")}</span></li>`).join("")}</ul>`;
+    const rows = `<ul class="results">${bad.map((f) => `<li class="bad">${esc(f.lab.title)}<span class="detail">${esc(f.problems[0] ?? "")}</span></li>`).join("")}</ul>`;
+    if (bad.length > 3) labsHtml += `<details class="why"><summary>Why the other ${bad.length} do not fit</summary>${rows}</details>`;
+    else if (bad.length) labsHtml += rows;
   }
   const entries = listSites();
   const rows = entries

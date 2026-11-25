@@ -41,6 +41,8 @@ export interface SiteHost {
   os: string;
   user: string;
   description: string;
+  /** Multi-factor authentication for remote logins to this host. */
+  mfa?: boolean;
 }
 
 export interface SiteZone {
@@ -381,7 +383,8 @@ function normalize(raw: Raw, chain: string[], c: Checker): Site | undefined {
     if (!HOST_KINDS.includes(kind)) c.errors.push(`${w}: kind must be one of ${HOST_KINDS.join(", ")}`);
     const services = c.list(h.services, `${w}.services`, false).map((s) => c.str(s, `${w}.services`));
     for (const s of services) if (s && !SITE_SERVICES.includes(s)) c.errors.push(`${w}: unknown service "${s}". Use ${SITE_SERVICES.join(", ")}`);
-    hosts.push({ name: hn, role, ip, level, kind, services, os: c.str(h.os, `${w}.os`, false), user: c.str(h.user, `${w}.user`, false), description: c.str(h.description, `${w}.description`, false) });
+    hosts.push({ name: hn, role, ip, level, kind, services, os: c.str(h.os, `${w}.os`, false), user: c.str(h.user, `${w}.user`, false), description: c.str(h.description, `${w}.description`, false), ...(h.mfa === true ? { mfa: true } : {}) });
+    if (h.mfa !== undefined && typeof h.mfa !== "boolean") c.errors.push(`${w}.mfa must be true or false`);
   });
   if (!hosts.length && Array.isArray(raw.hosts)) c.errors.push("hosts must list at least one host");
   const host = (n: string) => hosts.find((h) => h.name === n);
@@ -594,7 +597,7 @@ export interface LoadSiteOptions {
 const KEYS = {
   top: ["schema", "id", "name", "description", "extends", "rename", "process", "hosts", "zones", "conduits", "devices", "hmi", "polling", "flows", "ids"],
   process: ["model", "tags", "params"],
-  host: ["name", "remove", "role", "ip", "level", "kind", "services", "os", "user", "description"],
+  host: ["name", "remove", "role", "ip", "level", "kind", "services", "os", "user", "description", "mfa"],
   zone: ["name", "remove", "description", "sl", "hosts"],
   conduit: ["name", "remove", "zones", "rules"],
   device: ["remove", "title", "vendor", "product", "revision", "points"],

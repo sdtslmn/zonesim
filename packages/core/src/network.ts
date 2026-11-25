@@ -127,7 +127,7 @@ export class Network {
       kind: h.kind,
       services: h.services as ServiceName[],
       zone: zoneOf.get(h.name) ?? "",
-      mfa: false,
+      mfa: h.mfa === true,
     }));
     this.zones = site.zones.map((z) => ({ name: z.name, ...(z.sl ? { sl: z.sl } : {}), ...(z.description ? { description: z.description } : {}) }));
     this.conduits = site.conduits.map((c) => ({ name: c.name, zones: [c.zones[0], c.zones[1]] as [string, string], rules: [] }));

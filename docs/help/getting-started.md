@@ -58,6 +58,12 @@ in: `ssh hmi-01 modbus read plc-1 hr 0 3`.
 Finished labs are saved in this browser. Your own sites are saved here too.
 Clearing the site data of this page removes both.
 
+## Flat at the start
+
+Every session starts from the plant as found: one flat network, where the
+office PC can reach the PLC. That is the problem the labs solve. To see what
+a finished design looks like, pick **Riverside, segmented** in the Site tab.
+
 ## Next
 
 - [Commands](commands.md) lists everything you can type.

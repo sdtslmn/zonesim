@@ -12,6 +12,12 @@ browser, and nothing real is touched.
 
 ![ZoneSim during a lab: the lab on the left, the network map with a dropped Modbus write on the top right, and the terminal docked at the bottom](docs/images/web-lab.png)
 
+*Lab 7, after the zones and conduits are in place: the historian's Modbus
+write is dropped at the operations to control conduit. Every new session
+starts from the flat network as found; the labs build this design step by
+step. [Open this lab](https://sdtslmn.github.io/zonesim/?lab=i03), or see the
+[finished design](https://sdtslmn.github.io/zonesim/?site=riverside-segmented).*
+
 ## What you can do
 
 - **Look around a working plant.** A tank, an inlet pump, chlorine dosing, a
@@ -77,6 +83,13 @@ The built-in site is Riverside, a small drinking water plant:
 
 The plant, the devices, the vendor and the register maps are fictional. The
 whole site is one file: [sites/riverside-water.yaml](sites/riverside-water.yaml).
+
+There are two built-in versions of it, both in the **Site** tab:
+
+| Site | Starts as | Use it to |
+|---|---|---|
+| `riverside-water` | one flat network, a direct vendor path from the internet | work through the labs and build the design yourself |
+| `riverside-segmented` | the finished design: office, DMZ, operations, control and safety zones, least-privilege conduits, Modbus filtering, a jump host with MFA | see the target architecture, compare it with yours, or start your own site from it |
 
 ## Use your own plant
 

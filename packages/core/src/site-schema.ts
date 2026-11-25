@@ -83,6 +83,7 @@ export function siteJsonSchema(): Record<string, unknown> {
             os: { type: "string" },
             user: { type: "string", description: "The account you get with ssh" },
             description: { type: "string" },
+            mfa: { type: "boolean", description: "Multi-factor authentication for remote logins (jump hosts)" },
           },
         },
       },

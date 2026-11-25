@@ -1036,6 +1036,7 @@ label.btn {
   border-radius: 6px;
 }
 
+details.why summary,
 #site-editor summary {
   cursor: pointer;
   color: var(--accent);

@@ -264,6 +264,10 @@
           },
           "description": {
             "type": "string"
+          },
+          "mfa": {
+            "type": "boolean",
+            "description": "Multi-factor authentication for remote logins (jump hosts)"
           }
         }
       }
