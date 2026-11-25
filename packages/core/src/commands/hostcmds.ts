@@ -3,7 +3,8 @@
 
 import type { Shell, CommandFn } from "../shell.js";
 import { SERVICES, SERVICE_NAMES, type Host, type ServiceName } from "../network.js";
-import { DEVICE_MAPS, EXCEPTIONS, FC_NAMES, type DeviceName, type PointTable } from "../plant.js";
+import { EXCEPTIONS, FC_NAMES, type PointTable } from "../modbus.js";
+import type { Sim } from "../sim.js";
 import { C, UserError, table } from "../util.js";
 import { mapText } from "./console.js";
 
@@ -30,13 +31,8 @@ const TABLES: Record<string, { t: PointTable; fc: number; name: string }> = {
   hr: { t: "hr", fc: 3, name: "holding registers" },
 };
 
-function device(sim: { net: { needHost(r: string): Host } }, ref: string): Host {
+function device(sim: Sim, ref: string): Host {
   return sim.net.needHost(ref);
-}
-
-function mapDevice(h: Host): DeviceName {
-  if (h.name !== "plc-1" && h.name !== "sis-1") throw new UserError(`${h.name} is not a Modbus device. The controllers are plc-1 and sis-1.`);
-  return h.name;
 }
 
 function int(text: string | undefined, what: string): number {
@@ -52,7 +48,7 @@ const modbus: CommandFn = (args, { io, sim, host }) => {
   }
   if (sub === "map") {
     if (!target) throw new UserError("usage: modbus map HOST");
-    io.stdout(mapText(mapDevice(device(sim, target))));
+    io.stdout(mapText(sim, device(sim, target).name));
     return 0;
   }
   if (!host) throw new UserError(`run this on a host so the traffic has a source, e.g. ssh hmi-01 modbus ${args.join(" ")}`);
@@ -87,7 +83,7 @@ const modbus: CommandFn = (args, { io, sim, host }) => {
       const reply = send({ fc: tdef.fc, addr: start, count });
       if (!reply) return 1;
       io.stdout(`${dst.name} (${addr}) fc ${tdef.fc}, ${FC_NAMES[tdef.fc]}\n`);
-      const defs = dst.name === "plc-1" || dst.name === "sis-1" ? DEVICE_MAPS[dst.name][tdef.t] : [];
+      const defs = sim.device(dst.name)?.def.points[tdef.t] ?? [];
       const rows = reply.values!.map((v, i) => {
         const d = defs.find((p) => p.addr === start + i);
         return [`${tdef.t} ${start + i}`, String(v), d ? d.tag : "", d ? d.description : ""];
@@ -106,7 +102,7 @@ const modbus: CommandFn = (args, { io, sim, host }) => {
       const fc = isCoil ? (values.length > 1 ? 15 : 5) : values.length > 1 ? 16 : 6;
       const reply = send({ fc, addr: start, values });
       if (!reply) return 1;
-      const tag = dst.name === "plc-1" || dst.name === "sis-1" ? DEVICE_MAPS[dst.name][isCoil ? "coil" : "hr"].find((p) => p.addr === start)?.tag : undefined;
+      const tag = sim.device(dst.name)?.def.points[isCoil ? "coil" : "hr"].find((p) => p.addr === start)?.tag;
       io.stdout(`${dst.name} (${addr}) fc ${fc}, ${FC_NAMES[fc]}: ${isCoil ? "coil" : "hr"} ${start}${tag ? ` (${tag})` : ""} = ${values.join(",")}  ${C.green("OK")}\n`);
       return 0;
     }
@@ -228,14 +224,17 @@ const curl: CommandFn = (args, { io, sim, host }) => {
     io.stderr(`curl: (7) Failed to connect to ${dst.name} port ${SERVICES[scheme].port}: Connection refused\n`);
     return 7;
   }
-  const p = sim.plant;
-  const body: Record<string, string> = {
-    "hmi-01": `Riverside WTP operator HMI\nT-101 level ${p.level.toFixed(1)} %, P-101 ${p.pumpRunning ? "RUN" : "STOP"}, chlorine ${p.chlorine.toFixed(2)} mg/L\nLog in to operate.\n`,
-    "plc-1": `ZS-PLC 100 web server, firmware 2.4.1\nConfiguration login: admin / admin (default password still set)\n`,
-    historian: `{"source":"historian","tank_level_pct":${p.level.toFixed(1)},"chlorine_mg_l":${p.chlorine.toFixed(2)},"points":512}\n`,
-    "hist-dmz": `Production report (copy in the DMZ)\nTank T-101 level ${p.level.toFixed(1)} %, chlorine ${p.chlorine.toFixed(2)} mg/L\nThis copy is read-only and refreshed from the historian every 10 s.\n`,
+  const level = (sim.plant.get("level") / 10).toFixed(1);
+  const chlorine = (sim.plant.get("chlorine") / 100).toFixed(2);
+  const tags = sim.plant.tags;
+  const dev = sim.device(dst.name);
+  const byRole: Record<string, string> = {
+    hmi: `${sim.site.name} operator HMI\n${tags.tank ?? "Tank"} level ${level} %, ${tags.pump ?? "pump"} ${sim.plant.get("pump.running") ? "RUN" : "STOP"}, chlorine ${chlorine} mg/L\nLog in to operate.\n`,
+    historian: `{"source":"${dst.name}","tank_level_pct":${level},"chlorine_mg_l":${chlorine},"points":512}\n`,
+    "report-server": `Production report (copy in the DMZ)\n${tags.tank ?? "Tank"} level ${level} %, chlorine ${chlorine} mg/L\nThis copy is read-only and refreshed from the historian.\n`,
   };
-  io.stdout(body[dst.name] ?? "OK\n");
+  const body = dev ? `${dev.def.product} web server, firmware ${dev.def.revision}\nConfiguration login: admin / admin (default password still set)\n` : byRole[dst.role ?? ""];
+  io.stdout(body ?? "OK\n");
   return 0;
 };
 

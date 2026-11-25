@@ -3,9 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="An OT/ICS security training simulator in your browser. Segment a small water treatment plant into IEC 62443 zones and conduits, filter Modbus function codes, and investigate IDS alerts. Labs are checked automatically." />
+    <meta name="description" content="An OT/ICS security training simulator in your browser. Segment a water treatment plant, or your own site, into IEC 62443 zones and conduits, filter Modbus function codes, and investigate IDS alerts. Labs are checked automatically." />
     <meta property="og:title" content="ZoneSim: OT/ICS security training simulator" />
-    <meta property="og:description" content="Segment a simulated water treatment plant into zones and conduits, filter Modbus, and investigate alerts. Free, in the browser." />
+    <meta property="og:description" content="Segment a simulated plant into zones and conduits, filter Modbus, and investigate alerts. Bring your own site file. Free, in the browser." />
     <meta property="og:type" content="website" />
     <title>ZoneSim: OT/ICS security training simulator</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230f766e'/%3E%3Crect x='6' y='8' width='8' height='16' rx='2' fill='none' stroke='white' stroke-width='2'/%3E%3Crect x='18' y='8' width='8' height='16' rx='2' fill='none' stroke='white' stroke-width='2'/%3E%3Cpath d='M14 16h4' stroke='white' stroke-width='2'/%3E%3C/svg%3E" />
@@ -14,17 +14,48 @@
     <header class="topbar">
       <div class="brand">ZoneSim <span class="tag">simulated plant, nothing real is touched</span></div>
       <nav>
-        <button id="nav-labs" class="link">Labs</button>
-        <button id="nav-map" class="link">Network map</button>
-        <button id="nav-plant" class="link">Plant</button>
+        <button id="site-chip" class="link site-chip" title="The plant you are working on. Click to change it.">Site</button>
         <button id="nav-sandbox" class="link">Sandbox</button>
-        <a id="nav-repo" class="link" href="https://github.com/" target="_blank" rel="noopener">GitHub</a>
+        <a id="nav-repo" class="link" href="https://github.com/sdtslmn/zonesim" target="_blank" rel="noopener">GitHub</a>
       </nav>
     </header>
-    <main class="layout" id="layout">
-      <aside id="panel" class="panel"></aside>
-      <section class="terminal-wrap">
-        <div id="terminal"></div>
+    <nav class="mobile-tabs" aria-label="Panels">
+      <button class="tab" data-tab="labs">Labs</button>
+      <button class="tab" data-tab="help">Help</button>
+      <button class="tab" data-tab="site">Site</button>
+      <button class="tab" data-tab="map">Map</button>
+      <button class="tab" data-tab="plant">Plant</button>
+    </nav>
+    <main class="app" id="app">
+      <aside class="side" id="side">
+        <div class="tabs" role="tablist" aria-label="Learn">
+          <button class="tab" data-tab="labs">Labs</button>
+          <button class="tab" data-tab="help">Help</button>
+          <button class="tab" data-tab="site">Site</button>
+        </div>
+        <div class="side-body" id="panel"></div>
+      </aside>
+      <div class="split-v" id="split-v" role="separator" aria-orientation="vertical" aria-label="Resize the left panel" tabindex="0"></div>
+      <section class="work" id="work">
+        <div class="view">
+          <div class="view-head">
+            <div class="tabs" role="tablist" aria-label="Watch">
+              <button class="tab" data-tab="map">Map</button>
+              <button class="tab" data-tab="plant">Plant</button>
+            </div>
+            <div id="strip-slot"></div>
+          </div>
+          <div class="view-body" id="view"></div>
+        </div>
+        <div class="dock" id="dock">
+          <div class="dock-head" id="dock-head" role="separator" aria-orientation="horizontal" aria-label="Resize the terminal" tabindex="0">
+            <span class="grip" aria-hidden="true"></span>
+            <span class="dock-title">Terminal</span>
+            <span class="meta" id="dock-where"></span>
+            <button id="dock-toggle" class="icon" aria-label="Fold the terminal" title="Fold or unfold the terminal">▾</button>
+          </div>
+          <div class="dock-body"><div id="terminal"></div></div>
+        </div>
       </section>
     </main>
     <script type="module" src="/src/main.ts"></script>

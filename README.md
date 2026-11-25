@@ -4,12 +4,13 @@
 that sits on one flat network, and secure it: group the hosts into IEC 62443
 zones, connect them with conduits and firewall rules, filter Modbus function
 codes, route vendor access through a DMZ, and investigate the alerts when
-someone attacks the plant. It runs in your browser or your terminal, and
-nothing real is touched.
+someone attacks the plant. Or load your own site, with your host names,
+addresses and Modbus map, and run the same labs on it. It runs in your
+browser, and nothing real is touched.
 
 **Try it in your browser: [sdtslmn.github.io/zonesim](https://sdtslmn.github.io/zonesim/)**
 
-![ZoneSim network map during a lab: a Modbus write from the historian is dropped at the operations to control conduit](docs/images/web-map.png)
+![ZoneSim during a lab: the lab on the left, the network map with a dropped Modbus write on the top right, and the terminal docked at the bottom](docs/images/web-lab.png)
 
 ## What you can do
 
@@ -32,6 +33,9 @@ nothing real is touched.
 - **Get reviewed.** `report` checks your design against eight security
   checks, from "office cannot reach control" to "remote access goes through a
   jump host with MFA".
+- **Bring your own plant.** Describe your site in a short YAML file and load
+  it in the Site tab. The labs fill in your names, addresses, registers and
+  setpoints.
 
 ## Labs
 
@@ -57,19 +61,52 @@ Link straight to a lab with `?lab=`, for example
 
 ## The plant
 
+The built-in site is Riverside, a small drinking water plant:
+
 | Host | IP | Purdue level | Role |
 |---|---|---|---|
-| vendor-laptop | 203.0.113.50 | 5 Internet | Remote vendor support |
-| corp-pc | 10.10.40.21 | 4 Enterprise | Office workstation |
-| hist-dmz | 10.10.35.10 | 3.5 DMZ | Historian copy for office reports |
-| jump-01 | 10.10.35.20 | 3.5 DMZ | Remote access jump host |
-| historian | 10.10.30.10 | 3 Operations | Process historian |
-| hmi-01 | 10.10.20.10 | 2 Supervisory | Operator HMI |
-| ews-01 | 10.10.20.30 | 2 Supervisory | Engineering workstation |
-| plc-1 | 10.10.10.10 | 1 Control | Tank and dosing PLC (Modbus TCP) |
-| sis-1 | 10.10.10.20 | 1 Control | Safety instrumented system (Modbus TCP) |
+| vendor-laptop | 203.0.113.50 | 5 Internet | Remote vendor support (`vendor`) |
+| corp-pc | 10.10.40.21 | 4 Enterprise | Office workstation (`office`) |
+| hist-dmz | 10.10.35.10 | 3.5 DMZ | Historian copy for office reports (`report-server`) |
+| jump-01 | 10.10.35.20 | 3.5 DMZ | Remote access jump host (`jump`) |
+| historian | 10.10.30.10 | 3 Operations | Process historian (`historian`) |
+| hmi-01 | 10.10.20.10 | 2 Supervisory | Operator HMI (`hmi`) |
+| ews-01 | 10.10.20.30 | 2 Supervisory | Engineering workstation (`ews`) |
+| plc-1 | 10.10.10.10 | 1 Control | Tank and dosing PLC, Modbus TCP (`plc`) |
+| sis-1 | 10.10.10.20 | 1 Control | Safety instrumented system, Modbus TCP (`sis`) |
 
-The plant, the devices, the vendor and the register maps are fictional.
+The plant, the devices, the vendor and the register maps are fictional. The
+whole site is one file: [sites/riverside-water.yaml](sites/riverside-water.yaml).
+
+## Use your own plant
+
+Start from the [template](sites/templates/my-site.yaml), change what you
+need, and load it in the **Site** tab. Anything you leave out comes from
+Riverside:
+
+```yaml
+schema: zonesim-site/1
+id: my-water-plant
+name: Northgate water works
+extends: riverside-water
+rename: { plc-1: tank-plc, hmi-01: scada-hmi }
+hosts:
+  - { name: tank-plc, ip: 192.168.10.10 }
+  - { name: scada-hmi, ip: 192.168.20.10 }
+process:
+  params: { stopLevel: 75 }
+```
+
+Labs find hosts by role, so they keep working: lab 3 now asks you to set
+tank-plc's stop level from scada-hmi, to 70 %. ZoneSim checks every lab
+against your site and runs the ones that do not fit on Riverside, with the
+reason. Share a site with a link: `?site=https://.../my-site.yaml`.
+
+The full guide is in [docs/help/customize.md](docs/help/customize.md), and
+[schema/site.schema.json](schema/site.schema.json) gives completion in
+editors such as VS Code.
+
+![The Site tab after loading a custom site: 12 of 12 labs run on it, and the lab text uses the site's own names](docs/images/web-site.png)
 
 ## A taste of the console
 
@@ -90,7 +127,14 @@ console:~$ test historian plc-1 modbus fc 6
 
 The console is an out-of-band management station: it designs zones and reads
 alerts, but sends no plant traffic. To act from a host, `ssh` to it. Type
-`help` for every command.
+`help` for every command, or open the **Help** tab.
+
+## The screen
+
+Labs, Help and Site are on the left. The network map and the plant view are
+on the top right, with a status strip. The terminal is docked at the bottom:
+drag its edge to resize it, or fold it away. On a phone the panels stack
+behind a tab bar.
 
 ## Run it on your computer
 
@@ -100,8 +144,8 @@ You need Node.js 20.19 or newer.
 git clone https://github.com/sdtslmn/zonesim.git
 cd zonesim
 npm install
-npm run sim         # terminal version
-npm run dev:web     # browser version on http://localhost:5173
+npm run dev:web                      # the simulator on http://localhost:5173
+npm run validate -- my-site.yaml     # check a site file, and which labs run on it
 ```
 
 `npm test` runs the tests and `npm run validate-labs` checks that every lab is

@@ -1,4 +1,5 @@
 id: i02-conduits
+site: riverside-water
 title: Connect the zones with conduits
 level: intermediate
 minutes: 15
@@ -16,52 +17,52 @@ setup:
   - zone create operations --sl 2
   - zone create control --sl 3
   - zone create safety --sl 3
-  - zone add enterprise corp-pc
-  - zone add dmz hist-dmz jump-01
-  - zone add operations historian
-  - zone add control hmi-01 ews-01 plc-1
-  - zone add safety sis-1
-  - zone delete site
+  - zone add enterprise ${office}
+  - zone add dmz ${report-server} ${jump}
+  - zone add operations ${historian}
+  - zone add control ${hmi} ${ews} ${plc}
+  - zone add safety ${sis}
+  - zone delete ${plc.zone}
 tasks:
   - Run `plant` to see which data flows are blocked.
   - "Create a conduit for each pair of zones that must talk, for example `conduit create ops-control operations control`."
-  - "Add an allow rule for each flow, for example `fw allow ops-control from historian to plc-1 modbus`."
+  - "Add an allow rule for each flow, for example `fw allow ops-control from ${historian} to ${plc} modbus`."
   - Get every plant data flow working, except the vendor's remote access (that is lab I05).
-  - Keep the office away from the plant. corp-pc must not reach plc-1 or the historian.
+  - Keep the office away from the plant. ${office} must not reach ${plc} or the historian.
 checks:
-  - name: The historian reads plc-1
+  - name: The historian reads ${plc}
     required: historian-plc
-  - name: The historian reads sis-1
+  - name: The historian reads ${sis}
     required: historian-sis
   - name: The HMI shows the safety system status
     required: hmi-sis
-  - name: The historian copies data to hist-dmz
+  - name: The historian copies data to ${report-server}
     required: historian-replica
-  - name: Office reports work from hist-dmz
+  - name: Office reports work from ${report-server}
     required: office-reports
-  - name: corp-pc cannot reach plc-1
-    flow: { from: corp-pc, to: plc-1, service: modbus, expect: blocked }
-  - name: corp-pc cannot reach the historian
-    flow: { from: corp-pc, to: historian, service: https, expect: blocked }
+  - name: ${office} cannot reach ${plc}
+    flow: { from: "${office}", to: "${plc}", service: modbus, expect: blocked }
+  - name: ${office} cannot reach the historian
+    flow: { from: "${office}", to: "${historian}", service: https, expect: blocked }
 hints:
   - "Each blocked flow needs a conduit between its two zones, plus a rule. `plant` names the zones in the reason."
-  - "The historian talks to three zones: control (plc-1), safety (sis-1) and dmz (hist-dmz). That makes three conduits from operations."
-  - "Office reports: corp-pc reads hist-dmz, so connect enterprise to dmz, never enterprise to operations."
+  - "The historian talks to three zones: control (${plc}), safety (${sis}) and dmz (${report-server}). That makes three conduits from operations."
+  - "Office reports: ${office} reads ${report-server}, so connect enterprise to dmz, never enterprise to operations."
 solution:
   - conduit create ops-control operations control
-  - fw allow ops-control from historian to plc-1 modbus
+  - fw allow ops-control from ${historian} to ${plc} modbus
   - conduit create ops-safety operations safety
-  - fw allow ops-safety from historian to sis-1 modbus
+  - fw allow ops-safety from ${historian} to ${sis} modbus
   - conduit create control-safety control safety
-  - fw allow control-safety from hmi-01 to sis-1 modbus
+  - fw allow control-safety from ${hmi} to ${sis} modbus
   - conduit create ops-dmz operations dmz
-  - fw allow ops-dmz from historian to hist-dmz https
+  - fw allow ops-dmz from ${historian} to ${report-server} https
   - conduit create ent-dmz enterprise dmz
-  - fw allow ent-dmz from corp-pc to hist-dmz https
+  - fw allow ent-dmz from ${office} to ${report-server} https
 learned: |
   Every conduit now carries only named flows, one way, from a named host to a
   named host. That is least privilege at the zone boundary. But look closely:
-  the historian is allowed to send any Modbus request to plc-1, writes
+  the historian is allowed to send any Modbus request to ${plc}, writes
   included. The next lab closes that with function code filtering.
 refs:
   - IEC 62443-3-2 ZCR 3 (partition into zones and conduits)

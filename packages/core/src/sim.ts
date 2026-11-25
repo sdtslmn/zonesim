@@ -1,19 +1,25 @@
-// The simulation: the plant process, the network policy, the background
-// traffic the plant needs, a passive OT intrusion detection sensor, and the
-// logs the learner investigates (flows, firewall log, alerts).
+// The simulation: a site's process, its controllers, the network policy, the
+// traffic the plant generates, a passive OT intrusion detection sensor, and
+// the logs the learner investigates (flows, firewall log, alerts).
 //
-// Time is virtual. In the apps it follows the wall clock; lab checks and
+// Time is virtual. In the browser it follows the wall clock; lab checks and
 // tests move it forward instantly with settle().
 
-import { Plant, WRITE_FCS, FC_NAMES, type DeviceName, type ModbusReply, type ModbusRequest } from "./plant.js";
+import { WRITE_FCS, FC_NAMES, type ModbusReply, type ModbusRequest } from "./modbus.js";
 import { Network, type Host, type ServiceName, type Verdict } from "./network.js";
 import { requiredFlowStatus, riskChecks, type FlowStatus, type RiskCheck } from "./checks.js";
+import { PROCESS_MODELS, WaterTank, type ProcessModel } from "./process/index.js";
+import { Controller } from "./device.js";
+import { builtinSite } from "./sites/index.js";
+import type { Site } from "./site.js";
 
 export const STEP = 0.5;
 /** Longest stretch of time the plant catches up on at once (e.g. after a laptop sleeps). */
 const MAX_CATCH_UP = 600;
 
 export interface SimOptions {
+  /** The plant to simulate. Defaults to the built-in Riverside site. */
+  site?: Site;
   /** Milliseconds, like Date.now. Pass a fixed function to drive time only with settle(). */
   clock?: () => number;
 }
@@ -73,12 +79,21 @@ export interface FwLogEntry {
   reason: string;
 }
 
-/** Hosts that are expected to write to plc-1 (the IDS baseline). */
-export const BASELINE_WRITERS = ["hmi-01", "ews-01"];
+export interface HmiView {
+  level: number;
+  chlorine: number;
+  pump: boolean;
+  dosing: boolean;
+  auto: boolean;
+  sisTrip: boolean;
+  bypass: boolean;
+}
 
 export class Sim {
-  readonly plant = new Plant();
-  readonly net = new Network();
+  readonly site: Site;
+  readonly plant: ProcessModel;
+  readonly net: Network;
+  readonly devices = new Map<string, Controller>();
   /** Plant time in seconds since the simulation started. */
   t = 0;
   events: TrafficEvent[] = [];
@@ -87,10 +102,9 @@ export class Sim {
   fwlog: FwLogEntry[] = [];
   /** Tank level every 5 seconds, for trends. */
   trend: { t: number; level: number; chlorine: number }[] = [];
-  /** When the HMI last got fresh data from each controller. */
-  hmiLast: Record<DeviceName, number> = { "plc-1": 0, "sis-1": 0 };
-  /** Values the HMI shows (from its last successful poll). */
-  hmiView = { level: 55, chlorine: 1.5, pump: false, dosing: true, auto: true, sisTrip: false, bypass: false };
+  /** Signal values the HMI last read, and when it last heard from each device. */
+  hmiValues: Record<string, number> = {};
+  hmiLast: Record<string, number> = {};
 
   private seq = 0;
   private alertSeq = 1000;
@@ -104,8 +118,28 @@ export class Sim {
   private listeners = new Set<() => void>();
 
   constructor(opts: SimOptions = {}) {
+    this.site = opts.site ?? builtinSite();
+    const type = PROCESS_MODELS[this.site.process.model];
+    this.plant = type.create(this.site.process.params, this.site.process.tags);
+    this.net = new Network(this.site);
+    for (const [host, def] of Object.entries(this.site.devices)) this.devices.set(host, new Controller(host, def, this.plant));
+    for (const c of this.devices.values()) for (const t of ["coil", "di", "ir", "hr"] as const) for (const p of c.def.points[t]) this.hmiValues[p.signal] = this.plant.get(p.signal);
     this.clock = opts.clock ?? (() => Date.now());
     this.realStart = this.clock();
+  }
+
+  /** The water-tank model, when the site uses it (the plant views need its fields). */
+  get tank(): WaterTank | undefined {
+    return this.plant instanceof WaterTank ? this.plant : undefined;
+  }
+
+  /** The host that plays a role in this site. */
+  roleHost(role: string): Host | undefined {
+    return this.net.hosts.find((h) => h.role === role);
+  }
+
+  device(host: string): Controller | undefined {
+    return this.devices.get(host);
   }
 
   /** The plant time the wall clock says it should be. */
@@ -155,48 +189,55 @@ export class Sim {
     this.backgroundTraffic();
     this.processAlarms();
     if (this.every("trend", 5)) {
-      this.trend.push({ t: this.t, level: this.plant.level, chlorine: this.plant.chlorine });
+      this.trend.push({ t: this.t, level: this.plant.get("level") / 10, chlorine: this.plant.get("chlorine") / 100 });
       if (this.trend.length > 240) this.trend.shift();
     }
   }
 
   // ------------------------------------------------------------ background traffic
 
-  private poll(src: string, dst: DeviceName, fcs: number[]): boolean {
-    let ok = true;
-    for (const fc of fcs) {
-      const r = this.modbus(src, dst, { fc, addr: 0, count: fc === 1 ? 3 : fc === 2 ? 2 : 1 }, { background: true });
-      ok &&= !!r.reply?.ok;
-    }
-    return ok;
-  }
-
   private backgroundTraffic(): void {
-    if (this.every("hmi-plc", 2, 1)) {
-      if (this.poll("hmi-01", "plc-1", [3, 4])) {
-        this.hmiLast["plc-1"] = this.t;
-        const p = this.plant;
-        Object.assign(this.hmiView, { level: p.level, chlorine: p.chlorine, pump: p.pumpRunning, dosing: p.dosingRunning, auto: p.autoMode });
+    const hmi = this.site.hmi;
+    this.site.polling.forEach((p, i) => {
+      if (!this.every(`poll-${i}`, p.every, i + 1)) return;
+      if (p.service !== "modbus") {
+        this.send(p.from, p.to, p.service as ServiceName, { background: true });
+        return;
       }
-    }
-    if (this.every("hmi-sis", 5, 2)) {
-      if (this.poll("hmi-01", "sis-1", [2])) {
-        this.hmiLast["sis-1"] = this.t;
-        Object.assign(this.hmiView, { sisTrip: this.plant.sisTrip, bypass: this.plant.bypassed });
+      let ok = true;
+      for (const fc of p.fc ?? [3]) {
+        const r = this.modbus(p.from, p.to, { fc, addr: 0, count: 1 }, { background: true });
+        ok &&= !!r.verdict.delivered;
       }
+      if (ok && hmi && p.from === hmi.host) {
+        this.hmiLast[p.to] = this.t;
+        const dev = this.devices.get(p.to);
+        if (dev) for (const t of ["coil", "di", "ir", "hr"] as const) for (const pt of dev.def.points[t]) this.hmiValues[pt.signal] = this.plant.get(pt.signal);
+      }
+    });
+    if (hmi) {
+      const commOk = this.t < hmi.timeout || this.t - (this.hmiLast[hmi.device] ?? 0) <= hmi.timeout;
+      if (!commOk && this.hmiCommOk) this.raise({ severity: "medium", title: `HMI lost communication with ${hmi.device}`, detail: `${hmi.host} has had no answer from ${hmi.device} for more than ${hmi.timeout} seconds. Operators are blind.`, src: hmi.host, dst: hmi.device, source: "process" });
+      this.hmiCommOk = commOk;
     }
-    if (this.every("hist-plc", 5, 3)) this.poll("historian", "plc-1", [4]);
-    if (this.every("hist-sis", 10, 4)) this.poll("historian", "sis-1", [4]);
-    if (this.every("replica", 10, 5)) this.send("historian", "hist-dmz", "https", { background: true });
-    if (this.every("reports", 30, 7)) this.send("corp-pc", "hist-dmz", "https", { background: true });
-
-    const commOk = this.t - this.hmiLast["plc-1"] <= 6 || this.t < 6;
-    if (!commOk && this.hmiCommOk) this.raise({ severity: "medium", title: "HMI lost communication with plc-1", detail: "hmi-01 has had no answer from plc-1 for more than 6 seconds. Operators are blind.", src: "hmi-01", dst: "plc-1", source: "process" });
-    this.hmiCommOk = commOk;
   }
 
   get hmiOnline(): boolean {
     return this.hmiCommOk;
+  }
+
+  /** What the operator screen shows (values from the last successful poll). */
+  get hmiView(): HmiView {
+    const v = this.hmiValues;
+    return {
+      level: (v.level ?? 0) / 10,
+      chlorine: (v.chlorine ?? 0) / 100,
+      pump: v["pump.running"] === 1,
+      dosing: v["dosing.running"] === 1,
+      auto: v["control.auto"] === 1,
+      sisTrip: v["sis.tripped"] === 1,
+      bypass: v["sis.bypassed"] === 1,
+    };
   }
 
   // ------------------------------------------------------------ traffic
@@ -234,11 +275,11 @@ export class Sim {
   /** A Modbus request from one host to a controller, over the network. */
   modbus(srcRef: string, dstRef: string, req: ModbusRequest, opts: { background?: boolean } = {}): { verdict: Verdict; reply?: ModbusReply } {
     const dst = this.net.needHost(dstRef);
-    const detail = describeRequest(req);
-    const verdict = this.send(srcRef, dst.name, "modbus", { fc: req.fc, background: opts.background, detail });
+    const verdict = this.send(srcRef, dst.name, "modbus", { fc: req.fc, background: opts.background, detail: describeRequest(req) });
     if (!verdict.delivered) return { verdict };
-    if (dst.name !== "plc-1" && dst.name !== "sis-1") return { verdict };
-    return { verdict, reply: this.plant.modbus(dst.name, req) };
+    const dev = this.devices.get(dst.name);
+    if (!dev) return { verdict };
+    return { verdict, reply: dev.modbus(req) };
   }
 
   // ------------------------------------------------------------ detection
@@ -246,23 +287,24 @@ export class Sim {
   /** The passive IDS sensor: it sees traffic that made it through the firewalls. */
   private inspect(src: Host, dst: Host, service: ServiceName, v: Verdict, fc: number | undefined, detail: string | undefined, background: boolean): void {
     if (background) return;
-    if (service === "modbus" && fc !== undefined && WRITE_FCS.includes(fc)) {
-      if (dst.name === "sis-1") {
-        this.raise({ severity: "critical", title: "Modbus write to the safety system", detail: `${src.name} (${src.ip}) sent ${detail ?? `function code ${fc}`} to sis-1. Safety systems should never be written to over the plant network.`, src: src.name, dst: dst.name, source: "ids" });
-      } else if (dst.name === "plc-1" && !BASELINE_WRITERS.includes(src.name)) {
-        this.raise({ severity: "high", title: "Unauthorized Modbus write to plc-1", detail: `${src.ip} sent ${detail ?? `function code ${fc}`} to plc-1. Only hmi-01 and ews-01 normally write to this PLC.`, src: src.name, dst: dst.name, source: "ids" });
+    const ids = this.site.ids;
+    if (service === "modbus" && fc !== undefined && WRITE_FCS.includes(fc) && this.devices.has(dst.name)) {
+      if (ids.safety.includes(dst.name)) {
+        this.raise({ severity: "critical", title: "Modbus write to the safety system", detail: `${src.name} (${src.ip}) sent ${detail ?? `function code ${fc}`} to ${dst.name}. Safety systems should never be written to over the plant network.`, src: src.name, dst: dst.name, source: "ids" });
+      } else if (!(ids.writers[dst.name] ?? []).includes(src.name)) {
+        const normal = ids.writers[dst.name]?.length ? `Only ${ids.writers[dst.name].join(" and ")} normally write to this controller.` : "Nothing normally writes to this controller.";
+        this.raise({ severity: "high", title: `Unauthorized Modbus write to ${dst.name}`, detail: `${src.ip} sent ${detail ?? `function code ${fc}`} to ${dst.name}. ${normal}`, src: src.name, dst: dst.name, source: "ids" });
       }
     }
-    if (service === "modbus" && fc === 43 && src.name !== "ews-01") {
+    if (service === "modbus" && fc === 43 && !ids.identify.includes(src.name)) {
       this.raise({ severity: "low", title: "Modbus device identification read", detail: `${src.ip} asked ${dst.name} for its vendor, model and firmware (function code 43). This is typical reconnaissance.`, src: src.name, dst: dst.name, source: "ids" });
     }
     if ((service === "rdp" || service === "ssh") && src.level >= 5 && dst.level <= 3) {
       this.raise({ severity: "high", title: "Remote access from the internet into the plant", detail: `${src.name} (${src.ip}) opened ${service} straight to ${dst.name}, a plant host, with no DMZ in between.`, src: src.name, dst: dst.name, source: "ids" });
     }
     if (v.allowed) {
-      const port = service === "icmp" ? "icmp" : String(service);
       const list = (this.scans.get(src.name) ?? []).filter((x) => this.t - x.t <= 30);
-      const target = `${dst.name}:${port}`;
+      const target = `${dst.name}:${service}`;
       if (!list.some((x) => x.target === target)) list.push({ t: this.t, target });
       this.scans.set(src.name, list);
       if (list.length >= 8) {
@@ -277,10 +319,32 @@ export class Sim {
     for (const a of this.plant.alarms()) {
       now.add(a.id);
       if (!this.activeAlarms.has(a.id) && a.id !== "level-h" && a.id !== "level-l" && a.id !== "manual") {
-        this.raise({ severity: a.severity, title: a.text, detail: processDetail(a.id, this), source: "process" });
+        this.raise({ severity: a.severity, title: a.text, detail: this.processDetail(a.id), source: "process" });
       }
     }
     this.activeAlarms = now;
+  }
+
+  private processDetail(id: string): string {
+    const p = this.tank;
+    if (!p) return "";
+    const pr = p.params;
+    switch (id) {
+      case "overflow":
+        return `The tank is full and the inlet pump keeps running. Auto mode: ${p.autoMode ? "on" : "off"}, safety bypass: ${p.bypassed ? "on" : "off"}, stop level ${p.stopSp / 10} %.`;
+      case "level-hh":
+        return `Level ${p.level.toFixed(1)} %. The safety system trips at ${p.tripSp / 10} %${p.bypassed ? ", but its trip is bypassed" : ""}.`;
+      case "sis-trip":
+        return `The safety system stopped inlet pump ${p.tags.pump} on high-high level. It resets when the level falls below ${pr.tripReset} %.`;
+      case "sis-bypass":
+        return "The high-high trip is bypassed. Nothing stops the tank from overflowing if the level control fails.";
+      case "cl-low":
+        return `Chlorine residual is ${p.chlorine.toFixed(2)} mg/L, below ${pr.chlorineLow} mg/L. Dosing ${p.dosingRunning ? "on" : "off"}, setpoint ${(p.chlorineSp / 100).toFixed(2)} mg/L.`;
+      case "cl-high":
+        return `Chlorine residual is ${p.chlorine.toFixed(2)} mg/L, above ${pr.chlorineHigh} mg/L. Setpoint ${(p.chlorineSp / 100).toFixed(2)} mg/L.`;
+      default:
+        return "";
+    }
   }
 
   raise(a: { severity: Severity; title: string; detail: string; src?: string; dst?: string; source: "ids" | "process" }): Alert {
@@ -301,34 +365,35 @@ export class Sim {
   // ------------------------------------------------------------ views
 
   requiredFlows(): FlowStatus[] {
-    return requiredFlowStatus(this.net);
+    return requiredFlowStatus(this.net, this.site.flows);
   }
 
   risks(): RiskCheck[] {
-    return riskChecks(this.net);
+    return riskChecks(this.net, this.site);
   }
 
   snapshot(): SimSnapshot {
-    const p = this.plant;
+    const p = this.tank;
     return {
       t: this.t,
+      site: { id: this.site.id, name: this.site.name },
       plant: {
-        level: round(p.level, 1),
-        chlorine: round(p.chlorine, 2),
-        pumpRunning: p.pumpRunning,
-        dosingRunning: p.dosingRunning,
-        autoMode: p.autoMode,
-        sisTrip: p.sisTrip,
-        bypassed: p.bypassed,
-        overflowing: p.overflowing,
-        overflowSeconds: round(p.overflowSeconds, 1),
-        startLevel: p.plcHr[0],
-        stopLevel: p.plcHr[1],
-        chlorineSetpoint: p.plcHr[2],
-        tripLevel: p.sisHr[0],
-        alarms: p.alarms(),
+        level: round(this.plant.get("level") / 10, 1),
+        chlorine: round(this.plant.get("chlorine") / 100, 2),
+        pumpRunning: this.plant.get("pump.running") === 1,
+        dosingRunning: this.plant.get("dosing.running") === 1,
+        autoMode: this.plant.get("control.auto") === 1,
+        sisTrip: this.plant.get("sis.tripped") === 1,
+        bypassed: this.plant.get("sis.bypassed") === 1,
+        overflowing: this.plant.get("alarm.overflow") === 1,
+        overflowSeconds: round(p?.overflowSeconds ?? 0, 1),
+        startLevel: this.plant.get("setpoint.start"),
+        stopLevel: this.plant.get("setpoint.stop"),
+        chlorineSetpoint: this.plant.get("setpoint.chlorine"),
+        tripLevel: this.plant.get("sis.trip_level"),
+        alarms: this.plant.alarms(),
       },
-      hmi: { online: this.hmiOnline, view: { ...this.hmiView }, lastPlc: this.hmiLast["plc-1"] },
+      hmi: { online: this.hmiOnline, view: this.hmiView, lastPlc: this.site.hmi ? this.hmiLast[this.site.hmi.device] ?? 0 : 0 },
       ...this.net.toJSON(),
       required: this.requiredFlows().map((f) => ({ id: f.flow.id, title: f.flow.title, ok: f.ok, reason: f.reason })),
       risks: this.risks(),
@@ -339,6 +404,7 @@ export class Sim {
 
 export interface SimSnapshot {
   t: number;
+  site: { id: string; name: string };
   plant: {
     level: number;
     chlorine: number;
@@ -355,7 +421,7 @@ export interface SimSnapshot {
     tripLevel: number;
     alarms: { id: string; text: string; severity: string }[];
   };
-  hmi: { online: boolean; view: Sim["hmiView"]; lastPlc: number };
+  hmi: { online: boolean; view: HmiView; lastPlc: number };
   hosts: Host[];
   zones: Network["zones"];
   conduits: Network["conduits"];
@@ -374,24 +440,4 @@ export function describeRequest(req: ModbusRequest): string {
   const what = req.fc === 5 || req.fc === 15 ? "coil" : req.fc === 6 || req.fc === 16 ? "holding register" : "";
   if (req.values && req.values.length) return `${name} (fc ${req.fc}): ${what} ${req.addr} = ${req.values.join(",")}`;
   return `${name} (fc ${req.fc})`;
-}
-
-function processDetail(id: string, sim: Sim): string {
-  const p = sim.plant;
-  switch (id) {
-    case "overflow":
-      return `The tank is full and the inlet pump keeps running. Auto mode: ${p.autoMode ? "on" : "off"}, SIS bypass: ${p.bypassed ? "on" : "off"}, stop level ${p.plcHr[1] / 10} %.`;
-    case "level-hh":
-      return `Level ${p.level.toFixed(1)} %. The safety system trips at ${p.sisHr[0] / 10} %${p.bypassed ? ", but its trip is bypassed" : ""}.`;
-    case "sis-trip":
-      return "sis-1 stopped inlet pump P-101 on high-high level. It resets when the level falls below 80 %.";
-    case "sis-bypass":
-      return "The high-high trip is bypassed (sis-1 coil 0 = 1). Nothing stops the tank from overflowing if the PLC fails.";
-    case "cl-low":
-      return `Chlorine residual is ${p.chlorine.toFixed(2)} mg/L, below 0.5 mg/L. Dosing ${p.dosingRunning ? "on" : "off"}, setpoint ${(p.plcHr[2] / 100).toFixed(2)} mg/L.`;
-    case "cl-high":
-      return `Chlorine residual is ${p.chlorine.toFixed(2)} mg/L, above 4 mg/L. Setpoint ${(p.plcHr[2] / 100).toFixed(2)} mg/L.`;
-    default:
-      return "";
-  }
 }

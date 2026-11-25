@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { parseLab, LabSession, MemoryFS, type IO, type Lab } from "../src/index.js";
+import { parseLab, builtinSite, loadSiteFile, resolveLab, validateLabOnSite, substitute, evalArithmetic, type Lab } from "../src/index.js";
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => {
@@ -10,7 +10,10 @@ function files(dir: string): string[] {
   });
 }
 
-const labs: Lab[] = files(join(__dirname, "../../../labs")).map((f) => parseLab(readFileSync(f, "utf8"), f));
+const root = join(__dirname, "../../..");
+const labs: Lab[] = files(join(root, "labs")).map((f) => parseLab(readFileSync(f, "utf8"), f));
+const riverside = builtinSite();
+const templateResult = loadSiteFile(readFileSync(join(root, "sites/templates/my-site.yaml"), "utf8"));
 
 describe("labs", () => {
   it("have unique ids", () => {
@@ -19,21 +22,58 @@ describe("labs", () => {
     expect(ids.length).toBeGreaterThanOrEqual(12);
   });
 
+  it("use placeholders instead of host names and addresses", () => {
+    for (const lab of labs) {
+      const text = JSON.stringify([lab.intro, lab.tasks, lab.hints, lab.solution, lab.setup, lab.checks]);
+      expect(text, lab.id).not.toMatch(/\bplc-1\b|\bsis-1\b|\bhmi-01\b|10\.10\./);
+    }
+  });
+
   for (const lab of labs) {
-    it(`${lab.id} is not solved at the start and is solved by its solution`, async () => {
-      const s = new LabSession(lab, new MemoryFS(), { clock: () => 0 });
-      expect(await s.setup()).toEqual([]);
-      const before = await s.check();
-      expect(before.every((r) => r.passed)).toBe(false);
-      for (const line of lab.solution) {
-        let err = "";
-        const io: IO = { stdout: () => {}, stderr: (t) => (err += t), sleep: async (ms) => s.sim.settle(ms / 1000) };
-        const code = await s.shell.exec(line, io);
-        if (!line.includes("#")) expect(code, `${line}: ${err}`).toBe(0);
-      }
-      s.sim.settle(2);
-      const after = await s.check();
-      expect(after.filter((r) => !r.passed)).toEqual([]);
+    it(`${lab.id} works on ${riverside.name}`, async () => {
+      const fit = await validateLabOnSite(lab, riverside);
+      expect(fit.problems).toEqual([]);
     });
   }
+
+  it("the template site loads", () => {
+    expect(templateResult.errors).toEqual([]);
+    expect(templateResult.site?.hosts.find((h) => h.role === "plc")?.name).toBe("tank-plc");
+  });
+
+  for (const lab of labs) {
+    it(`${lab.id} works on the template site`, async () => {
+      const fit = await validateLabOnSite(lab, templateResult.site!);
+      expect(fit.problems).toEqual([]);
+    });
+  }
+});
+
+describe("placeholders", () => {
+  const site = templateResult.site!;
+
+  it("resolve hosts, addresses, signals and parameters", () => {
+    expect(substitute("ssh ${hmi} modbus read ${plc} hr ${plc:setpoint.stop}", site)).toBe("ssh scada-hmi modbus read tank-plc hr 101");
+    expect(substitute("${plc.ip} ${plc.net} ${plc.firmware}", site)).toBe("192.168.10.10 192.168.10.0/24 3.1.0");
+    expect(substitute("${param.stopLevel*10-50}", site)).toBe(700);
+    expect(substitute("${param.inflow-param.demand} %", site)).toBe("1 %");
+    expect(substitute("${plc.zone}", site)).toBe("site");
+  });
+
+  it("report what is missing", () => {
+    expect(() => substitute("${pump}", site)).toThrow(/no host with role "pump"/);
+    expect(() => substitute("${plc:valve.open}", site)).toThrow(/not mapped/);
+    expect(() => substitute("${param.nope}", site)).toThrow(/unknown process parameter/);
+  });
+
+  it("arithmetic is safe and correct", () => {
+    expect(evalArithmetic("2*(3+4)-1")).toBe(13);
+    expect(evalArithmetic("-5+10/4")).toBe(-2.5);
+    expect(() => evalArithmetic("alert(1)")).toThrow();
+  });
+
+  it("a lab that needs a missing role does not resolve", () => {
+    const broken = { ...labs[0], tasks: ["ssh ${pump}"] };
+    expect(resolveLab(broken, site).error).toMatch(/pump/);
+  });
 });

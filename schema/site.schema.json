@@ -1,0 +1,778 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sdtslmn.github.io/zonesim/schema/site.schema.json",
+  "title": "ZoneSim site file",
+  "description": "A plant for the ZoneSim OT/ICS security simulator. See docs/help/customize.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "name"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "zonesim-site/1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,40}$",
+      "description": "Short id, lower-case letters, digits and dashes"
+    },
+    "name": {
+      "type": "string",
+      "description": "Shown in the simulator"
+    },
+    "description": {
+      "type": "string"
+    },
+    "extends": {
+      "type": "string",
+      "description": "A built-in site to start from, e.g. riverside-water. Anything you leave out comes from it."
+    },
+    "rename": {
+      "type": "object",
+      "description": "Rename hosts or zones of the site being extended. Every reference is updated.",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{0,23}$"
+      }
+    },
+    "process": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "enum": [
+            "water-tank"
+          ],
+          "description": "The process the plant runs"
+        },
+        "tags": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string",
+              "default": "river"
+            },
+            "consumer": {
+              "type": "string",
+              "default": "town"
+            },
+            "tank": {
+              "type": "string",
+              "default": "T-101"
+            },
+            "pump": {
+              "type": "string",
+              "default": "P-101"
+            },
+            "dosing": {
+              "type": "string",
+              "default": "P-201"
+            }
+          },
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Display names, e.g. tank: T-101"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "initialLevel": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 55,
+              "description": "Tank level at start, %"
+            },
+            "inflow": {
+              "type": "number",
+              "minimum": 0.01,
+              "maximum": 20,
+              "default": 1.2,
+              "description": "Level rise per second while the inlet pump runs, %"
+            },
+            "demand": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 20,
+              "default": 0.5,
+              "description": "Level drop per second from consumption, %"
+            },
+            "startLevel": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 40,
+              "description": "Default pump start level in auto mode, %"
+            },
+            "stopLevel": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 80,
+              "description": "Default pump stop level in auto mode, %"
+            },
+            "lowAlarm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 20,
+              "description": "Low level alarm, %"
+            },
+            "highAlarm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 85,
+              "description": "High level alarm, %"
+            },
+            "highHighAlarm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 95,
+              "description": "High-high level alarm, %"
+            },
+            "tripLevel": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 95,
+              "description": "Default safety trip level, %"
+            },
+            "tripReset": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 80,
+              "description": "The safety trip resets below this level, %"
+            },
+            "chlorineSetpoint": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 20,
+              "default": 1.5,
+              "description": "Default chlorine setpoint, mg/L"
+            },
+            "chlorineInitial": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 20,
+              "default": 1.5,
+              "description": "Chlorine residual at start, mg/L"
+            },
+            "chlorineLow": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 20,
+              "default": 0.5,
+              "description": "Low chlorine alarm, mg/L"
+            },
+            "chlorineHigh": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 20,
+              "default": 4,
+              "description": "High chlorine alarm, mg/L"
+            },
+            "chlorineTau": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 3600,
+              "default": 15,
+              "description": "Seconds for the residual to follow the setpoint"
+            },
+            "chlorineDecay": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 3600,
+              "default": 40,
+              "description": "Seconds for the residual to decay with dosing off"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "hosts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,23}$"
+          },
+          "remove": {
+            "type": "boolean",
+            "description": "Remove this host from the site being extended"
+          },
+          "role": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "description": "What the host does. Labs find hosts by role (plc, sis, hmi, ews, historian, report-server, jump, office, vendor)."
+          },
+          "ip": {
+            "type": "string",
+            "format": "ipv4"
+          },
+          "level": {
+            "enum": [
+              5,
+              4,
+              3.5,
+              3,
+              2,
+              1,
+              0
+            ],
+            "description": "Purdue level. 3.5 is the DMZ."
+          },
+          "kind": {
+            "enum": [
+              "external",
+              "it",
+              "dmz",
+              "ot"
+            ]
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "ssh",
+                "http",
+                "https",
+                "modbus",
+                "rdp"
+              ]
+            }
+          },
+          "os": {
+            "type": "string"
+          },
+          "user": {
+            "type": "string",
+            "description": "The account you get with ssh"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "zones": {
+      "type": "array",
+      "description": "The zones as found. A zone you list replaces the zone of that name.",
+      "items": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,23}$"
+          },
+          "remove": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "sl": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "description": "Target security level (SL-T)"
+          },
+          "hosts": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,23}$"
+            }
+          }
+        }
+      }
+    },
+    "conduits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,23}$"
+          },
+          "remove": {
+            "type": "boolean"
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,23}$"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "allow|deny from SRC to DST SERVICE [fc LIST]"
+            }
+          }
+        }
+      }
+    },
+    "devices": {
+      "type": "object",
+      "description": "Modbus controllers, by host name. A points table you give replaces the inherited one.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "remove": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string"
+          },
+          "vendor": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string",
+            "description": "Firmware revision, returned by function code 43"
+          },
+          "points": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "coil": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "addr",
+                    "signal"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "addr": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 65535,
+                      "description": "Modbus address, starting at 0"
+                    },
+                    "tag": {
+                      "type": "string",
+                      "description": "Tag name, as in the PLC program"
+                    },
+                    "signal": {
+                      "enum": [
+                        "pump.command",
+                        "dosing.enable",
+                        "control.auto",
+                        "sis.bypass",
+                        "setpoint.start",
+                        "setpoint.stop",
+                        "setpoint.chlorine",
+                        "sis.trip_level",
+                        "pump.running",
+                        "dosing.running",
+                        "alarm.high",
+                        "alarm.low",
+                        "alarm.overflow",
+                        "sis.tripped",
+                        "sis.bypassed",
+                        "level",
+                        "chlorine",
+                        "sis.level"
+                      ],
+                      "description": "The process signal this point exposes"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "units": {
+                      "type": "string",
+                      "description": "How to scale the raw value"
+                    }
+                  }
+                }
+              },
+              "di": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "addr",
+                    "signal"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "addr": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 65535,
+                      "description": "Modbus address, starting at 0"
+                    },
+                    "tag": {
+                      "type": "string",
+                      "description": "Tag name, as in the PLC program"
+                    },
+                    "signal": {
+                      "enum": [
+                        "pump.command",
+                        "dosing.enable",
+                        "control.auto",
+                        "sis.bypass",
+                        "setpoint.start",
+                        "setpoint.stop",
+                        "setpoint.chlorine",
+                        "sis.trip_level",
+                        "pump.running",
+                        "dosing.running",
+                        "alarm.high",
+                        "alarm.low",
+                        "alarm.overflow",
+                        "sis.tripped",
+                        "sis.bypassed",
+                        "level",
+                        "chlorine",
+                        "sis.level"
+                      ],
+                      "description": "The process signal this point exposes"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "units": {
+                      "type": "string",
+                      "description": "How to scale the raw value"
+                    }
+                  }
+                }
+              },
+              "ir": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "addr",
+                    "signal"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "addr": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 65535,
+                      "description": "Modbus address, starting at 0"
+                    },
+                    "tag": {
+                      "type": "string",
+                      "description": "Tag name, as in the PLC program"
+                    },
+                    "signal": {
+                      "enum": [
+                        "pump.command",
+                        "dosing.enable",
+                        "control.auto",
+                        "sis.bypass",
+                        "setpoint.start",
+                        "setpoint.stop",
+                        "setpoint.chlorine",
+                        "sis.trip_level",
+                        "pump.running",
+                        "dosing.running",
+                        "alarm.high",
+                        "alarm.low",
+                        "alarm.overflow",
+                        "sis.tripped",
+                        "sis.bypassed",
+                        "level",
+                        "chlorine",
+                        "sis.level"
+                      ],
+                      "description": "The process signal this point exposes"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "units": {
+                      "type": "string",
+                      "description": "How to scale the raw value"
+                    }
+                  }
+                }
+              },
+              "hr": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "addr",
+                    "signal"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "addr": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 65535,
+                      "description": "Modbus address, starting at 0"
+                    },
+                    "tag": {
+                      "type": "string",
+                      "description": "Tag name, as in the PLC program"
+                    },
+                    "signal": {
+                      "enum": [
+                        "pump.command",
+                        "dosing.enable",
+                        "control.auto",
+                        "sis.bypass",
+                        "setpoint.start",
+                        "setpoint.stop",
+                        "setpoint.chlorine",
+                        "sis.trip_level",
+                        "pump.running",
+                        "dosing.running",
+                        "alarm.high",
+                        "alarm.low",
+                        "alarm.overflow",
+                        "sis.tripped",
+                        "sis.bypassed",
+                        "level",
+                        "chlorine",
+                        "sis.level"
+                      ],
+                      "description": "The process signal this point exposes"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "units": {
+                      "type": "string",
+                      "description": "How to scale the raw value"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "hmi": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,23}$"
+        },
+        "device": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,23}$"
+        },
+        "timeout": {
+          "type": "number",
+          "minimum": 1
+        }
+      }
+    },
+    "polling": {
+      "type": "array",
+      "description": "Traffic the plant generates by itself. Replaces the inherited list.",
+      "items": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "service",
+          "every"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,23}$"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,23}$"
+          },
+          "service": {
+            "enum": [
+              "ssh",
+              "http",
+              "https",
+              "modbus",
+              "rdp"
+            ]
+          },
+          "fc": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 127
+            }
+          },
+          "every": {
+            "type": "number",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "flows": {
+      "type": "array",
+      "description": "Data flows the plant needs. Give from/to/service for one hop, or paths for alternatives.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "remove": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,23}$"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,23}$"
+          },
+          "service": {
+            "enum": [
+              "ssh",
+              "http",
+              "https",
+              "modbus",
+              "rdp"
+            ]
+          },
+          "fc": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 127
+            }
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "from",
+                  "to",
+                  "service"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,23}$"
+                  },
+                  "to": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,23}$"
+                  },
+                  "service": {
+                    "enum": [
+                      "ssh",
+                      "http",
+                      "https",
+                      "modbus",
+                      "rdp"
+                    ]
+                  },
+                  "fc": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 127
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ids": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "writers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,23}$"
+            }
+          },
+          "description": "Hosts that normally write to each controller"
+        },
+        "safety": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,23}$"
+          },
+          "description": "Controllers where any write is critical"
+        },
+        "identify": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,23}$"
+          },
+          "description": "Hosts allowed to read device identification"
+        }
+      }
+    }
+  }
+}

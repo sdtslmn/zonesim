@@ -1,7 +1,7 @@
 {
   "name": "@zonesim/cli",
-  "version": "0.1.0",
-  "description": "Terminal version of the ZoneSim OT/ICS security training simulator.",
+  "version": "0.2.0",
+  "description": "Checks site files and labs for the ZoneSim OT/ICS security simulator.",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
@@ -11,6 +11,6 @@
     "dist"
   ],
   "dependencies": {
-    "@zonesim/core": "0.1.0"
+    "@zonesim/core": "0.2.0"
   }
 }

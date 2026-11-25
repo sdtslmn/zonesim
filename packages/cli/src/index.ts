@@ -1,205 +1,183 @@
 #!/usr/bin/env node
-// ZoneSim in the terminal: an interactive console with labs, plus a few
-// non-interactive modes for scripts and CI (-c, validate-labs).
+// ZoneSim checker for the terminal and CI. The simulator itself runs in the
+// browser; this tool checks site files and labs before you share them.
 
-import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homedir } from "node:os";
-import * as readline from "node:readline";
-import { Trainer, LabSession, MemoryFS, parseLab, sortLabs, findLab, VERSION, C, type Lab, type IO } from "@zonesim/core";
+import { loadSiteFile, builtinSite, builtinSiteIds, validateLabsOnSite, parseLab, sortLabs, VERSION, C, stripAnsi, type Lab, type Site } from "@zonesim/core";
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+// Plain output when piped or when NO_COLOR is set.
+if (!process.stdout.isTTY || process.env.NO_COLOR) {
+  const plain = (f: (...a: unknown[]) => void) => (...a: unknown[]) => f(...a.map((x) => (typeof x === "string" ? stripAnsi(x) : x)));
+  console.log = plain(console.log);
+  console.error = plain(console.error);
+}
 const LABS_DIR = process.env.ZONESIM_LABS ?? join(here, "..", "..", "..", "labs");
+
+const USAGE = `ZoneSim ${VERSION}: checks site files and labs for the ZoneSim OT/ICS security simulator.
+The simulator runs in the browser: https://sdtslmn.github.io/zonesim/
+
+Usage:
+  zonesim validate SITE.yaml...    check site files, and which labs run on each
+  zonesim validate-labs            check that every lab is solved by its own solution
+  zonesim --version | --help
+
+Options:
+  --labs DIR    labs folder (default: the labs folder of this repo, or $ZONESIM_LABS)
+  --quiet       print only problems
+
+Exit code 0 means everything passed, 1 means a problem was found.
+`;
 
 function yamlFiles(dir: string): string[] {
   if (!existsSync(dir)) return [];
-  const out: string[] = [];
-  for (const name of readdirSync(dir)) {
+  return readdirSync(dir).flatMap((name) => {
     const p = join(dir, name);
-    if (statSync(p).isDirectory()) out.push(...yamlFiles(p));
-    else if (name.endsWith(".yaml") || name.endsWith(".yml")) out.push(p);
-  }
-  return out;
+    if (statSync(p).isDirectory()) return yamlFiles(p);
+    return name.endsWith(".yaml") || name.endsWith(".yml") ? [p] : [];
+  });
 }
 
-function loadLabs(): Lab[] {
+function loadLabs(dir: string): { labs: Lab[]; errors: string[] } {
   const labs: Lab[] = [];
-  for (const file of yamlFiles(LABS_DIR)) {
+  const errors: string[] = [];
+  for (const file of yamlFiles(dir)) {
     try {
       labs.push(parseLab(readFileSync(file, "utf8"), file));
     } catch (e) {
-      console.error(C.yellow(`Skipping ${file}: ${(e as Error).message}`));
+      errors.push(`${file}: ${(e as Error).message}`);
     }
   }
-  return sortLabs(labs);
+  return { labs: sortLabs(labs), errors };
 }
 
-const PROGRESS_FILE = process.env.ZONESIM_PROGRESS ?? join(homedir(), ".zonesim", "progress.json");
-
-const progress = {
-  load(): string[] {
-    try {
-      return JSON.parse(readFileSync(PROGRESS_FILE, "utf8")) as string[];
-    } catch {
-      return [];
+async function reportLabs(labs: Lab[], site: Site, quiet: boolean): Promise<{ ok: number; total: number; lines: string[] }> {
+  const fits = await validateLabsOnSite(labs, site);
+  const lines: string[] = [];
+  for (const f of fits) {
+    if (f.ok) {
+      if (!quiet) lines.push(`  ${C.green("ok")}    ${f.lab.id}  ${C.dim(`${f.checks} checks`)}`);
+    } else {
+      lines.push(`  ${C.yellow("skip")}  ${f.lab.id}  ${f.problems[0]}`);
+      for (const p of f.problems.slice(1, 3)) lines.push(`        ${C.dim(p)}`);
     }
-  },
-  save(ids: string[]): void {
-    try {
-      mkdirSync(dirname(PROGRESS_FILE), { recursive: true });
-      writeFileSync(PROGRESS_FILE, JSON.stringify(ids, null, 2));
-    } catch {
-      /* progress is optional */
-    }
-  },
-};
-
-const USAGE = `ZoneSim ${VERSION}: an OT/ICS security training simulator
-
-Usage:
-  zonesim                     interactive console (sandbox)
-  zonesim lab <n|id>          start at a lab, e.g. zonesim lab b01
-  zonesim -c "<commands>"     run commands in a fresh sandbox and exit
-  zonesim validate-labs       check that every lab is solved by its own solution
-  zonesim --version
-`;
-
-async function validateLabs(labs: Lab[]): Promise<number> {
-  let failed = 0;
-  for (const lab of labs) {
-    const problems: string[] = [];
-    const fs = new MemoryFS();
-    const s = new LabSession(lab, fs, { clock: () => 0 });
-    const setupErrors = await s.setup();
-    problems.push(...setupErrors.map((e) => `setup: ${e}`));
-    const before = await s.check();
-    if (before.every((r) => r.passed)) problems.push("all checks pass before the solution is applied");
-    for (const line of lab.solution) {
-      let err = "";
-      const io: IO = { stdout: () => {}, stderr: (t) => (err += t), sleep: async (ms) => s.sim.settle(ms / 1000) };
-      const code = await s.shell.exec(line, io);
-      // A step with a comment may fail on purpose ("# times out, as it should").
-      if (code !== 0 && !line.includes("#")) problems.push(`solution step failed: ${line}\n      ${err.trim()}`);
-    }
-    s.sim.settle(2);
-    const after = await s.check();
-    for (const r of after.filter((x) => !x.passed)) problems.push(`check fails after the solution: ${r.name} (${r.detail ?? ""})`);
-    if (problems.length) {
-      failed++;
-      console.log(`${C.red("✘")} ${lab.id}`);
-      for (const p of problems) console.log(`    ${p}`);
-    } else console.log(`${C.green("✔")} ${lab.id}  ${C.gray(`${after.length} checks`)}`);
   }
-  console.log(failed ? C.red(`\n${failed} of ${labs.length} labs have problems`) : C.green(`\nAll ${labs.length} labs are solvable by their solutions`));
+  return { ok: fits.filter((f) => f.ok).length, total: fits.length, lines };
+}
+
+async function validateSites(files: string[], labsDir: string, quiet: boolean): Promise<number> {
+  if (!files.length) {
+    console.error("validate needs at least one site file, for example: zonesim validate my-site.yaml");
+    return 1;
+  }
+  const { labs, errors: labErrors } = loadLabs(labsDir);
+  for (const e of labErrors) console.error(C.yellow(`Skipping lab ${e}`));
+  let failed = 0;
+  for (const file of files) {
+    let text: string;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch (e) {
+      console.error(`${C.red("✗")} ${file}: ${(e as Error).message}`);
+      failed++;
+      continue;
+    }
+    const r = loadSiteFile(text);
+    if (!r.site) {
+      failed++;
+      console.log(`${C.red("✗")} ${file}: ${r.errors.length} problem${r.errors.length === 1 ? "" : "s"}`);
+      for (const e of r.errors) console.log(`  ${e}`);
+      continue;
+    }
+    const s = r.site;
+    const chain = s.extends.length ? `, extends ${s.extends.join(" → ")}` : "";
+    console.log(`${C.green("✓")} ${file}: ${s.name} (${s.id}${chain}), ${s.hosts.length} hosts, ${Object.keys(s.devices).length} controllers, ${s.flows.length} data flows`);
+    for (const w of r.warnings ?? []) console.log(`  ${C.yellow("note")}  ${w}`);
+    if (labs.length) {
+      const rep = await reportLabs(labs, s, quiet);
+      console.log(`  Labs that run on this site: ${rep.ok} of ${rep.total}.${rep.ok < rep.total ? " The others run on the site they were written for." : ""}`);
+      for (const l of rep.lines) console.log(l);
+    }
+  }
   return failed ? 1 : 0;
 }
 
-async function runCommands(script: string): Promise<number> {
-  const t: Trainer = new Trainer({ labs: loadLabs(), print: (s) => process.stdout.write(s), sleep: async (ms: number) => t.sim.settle(ms / 1000) });
-  await t.startSandbox(false);
-  return t.run(script);
-}
-
-async function interactive(startLab?: string): Promise<void> {
-  const labs = loadLabs();
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    terminal: true,
-    historySize: 500,
-    completer: (line: string) => {
-      const opts = trainer.complete(line);
-      const word = line.split(/\s+/).pop() ?? "";
-      return [opts, word];
-    },
-  });
-  const trainer: Trainer = new Trainer({ labs, print: (s) => process.stdout.write(s), progress, columns: () => process.stdout.columns ?? 80 });
-  console.log(`${C.bold(`ZoneSim ${VERSION}`)}  OT/ICS security training simulator. ${C.gray("Simulated plant, nothing real is touched.")}`);
-  if (startLab) {
-    const lab = findLab(trainer.labs, startLab);
-    if (!lab) console.log(C.yellow(`No lab matches "${startLab}". Starting the sandbox.`));
-    if (lab) await trainer.startLab(lab);
-    else await trainer.startSandbox();
-  } else {
-    await trainer.startSandbox(false);
-    console.log(`You are on the ${C.bold("console")}. Try ${C.cyan("plant")}, ${C.cyan("hosts")} and ${C.cyan("help")}, or start the guided labs with ${C.cyan("labs")}.\n`);
+async function validateAllLabs(labsDir: string, quiet: boolean): Promise<number> {
+  const { labs, errors } = loadLabs(labsDir);
+  for (const e of errors) console.log(`${C.red("✗")} ${e}`);
+  if (!labs.length) {
+    console.error(`No labs found in ${labsDir}`);
+    return 1;
   }
-
-  const ask = () => {
-    rl.setPrompt(trainer.prompt());
-    rl.prompt();
-  };
-  // Lines are queued and run one at a time, so pasted or piped input keeps its order.
-  const queue: string[] = [];
-  let running = false;
-  let closing = false;
-  const work = async () => {
-    if (running) return;
-    running = true;
-    while (queue.length) {
-      const line = queue.shift()!;
-      try {
-        await trainer.run(line);
-      } catch (e) {
-        console.error(C.red(`internal error: ${(e as Error).stack ?? e}`));
-      }
-      if (trainer.shell.exitRequested) {
-        queue.length = 0;
-        closing = true;
-        rl.close();
-        break;
-      }
-      if (queue.length) {
-        rl.setPrompt(trainer.prompt());
-        process.stdout.write(trainer.prompt() + queue[0] + "\n");
+  let failed = errors.length;
+  for (const id of builtinSiteIds()) {
+    const site = builtinSite(id);
+    const own = labs.filter((l) => l.site === id);
+    if (!own.length) continue;
+    const fits = await validateLabsOnSite(own, site);
+    for (const f of fits) {
+      if (f.ok) {
+        if (!quiet) console.log(`${C.green("✓")} ${f.lab.id}  ${C.dim(`${f.checks} checks on ${id}`)}`);
+      } else {
+        failed++;
+        console.log(`${C.red("✗")} ${f.lab.id}`);
+        for (const p of f.problems) console.log(`    ${p}`);
       }
     }
-    running = false;
-    if (!closing) ask();
+  }
+  const orphan = labs.filter((l) => !builtinSiteIds().includes(l.site));
+  for (const l of orphan) {
+    failed++;
+    console.log(`${C.red("✗")} ${l.id}: site "${l.site}" is not a built-in site`);
+  }
+  console.log(failed ? C.red(`\n${failed} lab${failed === 1 ? "" : "s"} failed`) : C.green(`\nAll ${labs.length} labs passed`));
+  return failed ? 1 : 0;
+}
+
+async function main(argv: string[]): Promise<number> {
+  const args = [...argv];
+  const flag = (name: string): boolean => {
+    const i = args.indexOf(name);
+    if (i < 0) return false;
+    args.splice(i, 1);
+    return true;
   };
-  rl.on("line", (line) => {
-    queue.push(line);
-    void work();
-  });
-  rl.on("SIGINT", () => {
-    process.stdout.write("^C\n");
-    ask();
-  });
-  rl.on("close", () => {
-    // Input ended (for example a piped script): finish what is queued first.
-    const finish = () => {
-      if (running || queue.length) return setTimeout(finish, 20);
-      console.log("Bye.");
-      process.exit(0);
-    };
-    closing = true;
-    finish();
-  });
-  ask();
-}
-
-async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-  if (args[0] === "--version" || args[0] === "-v") {
+  const option = (name: string): string | undefined => {
+    const i = args.indexOf(name);
+    if (i < 0) return undefined;
+    const v = args[i + 1];
+    args.splice(i, 2);
+    return v;
+  };
+  if (flag("--version") || flag("-v")) {
     console.log(VERSION);
-    return;
+    return 0;
   }
-  if (args[0] === "--help" || args[0] === "-h") {
+  if (flag("--help") || flag("-h") || !args.length) {
     console.log(USAGE);
-    return;
+    return args.length || argv.length ? 0 : 1;
   }
-  if (args[0] === "validate-labs") {
-    process.exit(await validateLabs(loadLabs()));
+  const quiet = flag("--quiet") || flag("-q");
+  const labsDir = option("--labs") ?? LABS_DIR;
+  const [cmd, ...rest] = args;
+  switch (cmd) {
+    case "validate":
+      return validateSites(rest, labsDir, quiet);
+    case "validate-labs":
+      return validateAllLabs(labsDir, quiet);
+    default:
+      console.error(`Unknown command "${cmd}".\n\n${USAGE}`);
+      return 1;
   }
-  if (args[0] === "-c") {
-    process.exit(await runCommands(args.slice(1).join(" ")));
-  }
-  if (args[0] === "lab") {
-    await interactive(args[1]);
-    return;
-  }
-  await interactive();
 }
 
-void main();
+main(process.argv.slice(2)).then(
+  (code) => process.exit(code),
+  (e) => {
+    console.error(e instanceof Error ? e.stack : e);
+    process.exit(1);
+  },
+);

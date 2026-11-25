@@ -10,7 +10,8 @@
 // - Modbus rules can be limited to function codes (deep packet inspection).
 
 import { UserError, parseNumberList } from "./util.js";
-import { READ_FCS, WRITE_FCS } from "./plant.js";
+import { READ_FCS, WRITE_FCS } from "./modbus.js";
+import type { Site } from "./site.js";
 
 export type ServiceName = "modbus" | "http" | "https" | "rdp" | "ssh" | "icmp";
 
@@ -36,14 +37,17 @@ export const LEVEL_NAMES: Record<string, string> = {
   "3": "Operations",
   "2": "Supervisory",
   "1": "Control",
+  "0": "Process",
 };
 
 export interface Host {
   name: string;
   ip: string;
-  /** Purdue level: 5 internet, 4 enterprise, 3.5 DMZ, 3 operations, 2 supervisory, 1 control. */
+  /** Purdue level: 5 internet, 4 enterprise, 3.5 DMZ, 3 operations, 2 supervisory, 1 control, 0 process. */
   level: number;
-  role: string;
+  /** The role labs refer to, e.g. plc or hmi. */
+  role?: string;
+  description: string;
   os: string;
   /** The account you are logged in as when you ssh to the host. */
   user: string;
@@ -92,18 +96,6 @@ export interface Verdict {
   blockedBy?: "no-conduit" | "default-deny" | "deny-rule" | "function-code";
 }
 
-const AS_FOUND_HOSTS: Omit<Host, "zone" | "mfa">[] = [
-  { name: "vendor-laptop", ip: "203.0.113.50", level: 5, role: "Remote vendor support laptop", os: "Windows 11", user: "vendor", kind: "external", services: [] },
-  { name: "corp-pc", ip: "10.10.40.21", level: 4, role: "Office workstation (finance)", os: "Windows 11", user: "alice", kind: "it", services: ["rdp"] },
-  { name: "hist-dmz", ip: "10.10.35.10", level: 3.5, role: "Historian copy for office reports", os: "Linux", user: "svc-report", kind: "dmz", services: ["https"] },
-  { name: "jump-01", ip: "10.10.35.20", level: 3.5, role: "Remote access jump host", os: "Windows Server 2022", user: "vendor", kind: "dmz", services: ["rdp", "ssh"] },
-  { name: "historian", ip: "10.10.30.10", level: 3, role: "Process historian", os: "Windows Server 2019", user: "svc-hist", kind: "ot", services: ["https", "ssh"] },
-  { name: "hmi-01", ip: "10.10.20.10", level: 2, role: "Operator HMI", os: "Windows 10 LTSC", user: "operator", kind: "ot", services: ["http", "rdp"] },
-  { name: "ews-01", ip: "10.10.20.30", level: 2, role: "Engineering workstation", os: "Windows 10", user: "engineer", kind: "ot", services: ["rdp"] },
-  { name: "plc-1", ip: "10.10.10.10", level: 1, role: "Tank and dosing PLC", os: "ZS-PLC 100, firmware 2.4.1", user: "", kind: "ot", services: ["modbus", "http"] },
-  { name: "sis-1", ip: "10.10.10.20", level: 1, role: "Safety instrumented system", os: "ZS-SIS 20, firmware 1.8.0", user: "", kind: "ot", services: ["modbus"] },
-];
-
 const NAME_RE = /^[a-z][a-z0-9-]{0,23}$/;
 
 export function endpointText(e: Endpoint): string {
@@ -120,21 +112,73 @@ export class Network {
   zones: Zone[];
   conduits: Conduit[];
 
-  constructor() {
-    // The plant as found: one flat "site" zone, and a port forward that
-    // lets the vendor's laptop reach the engineering workstation directly.
-    this.hosts = AS_FOUND_HOSTS.map((h) => ({ ...h, services: [...h.services], zone: h.kind === "external" ? "internet" : "site", mfa: false }));
-    this.zones = [
-      { name: "internet", description: "Everything outside the site" },
-      { name: "site", description: "The whole site network as found: office and plant on one flat network" },
-    ];
-    this.conduits = [
-      {
-        name: "edge",
-        zones: ["internet", "site"],
-        rules: [{ action: "allow", src: { type: "host", name: "vendor-laptop" }, dst: { type: "host", name: "ews-01" }, service: "rdp", hits: 0 }],
-      },
-    ];
+  constructor(site: Site) {
+    // The network as found, from the site file.
+    const zoneOf = new Map<string, string>();
+    for (const z of site.zones) for (const h of z.hosts) zoneOf.set(h, z.name);
+    this.hosts = site.hosts.map((h) => ({
+      name: h.name,
+      ip: h.ip,
+      level: h.level,
+      role: h.role,
+      description: h.description,
+      os: h.os,
+      user: h.user,
+      kind: h.kind,
+      services: h.services as ServiceName[],
+      zone: zoneOf.get(h.name) ?? "",
+      mfa: false,
+    }));
+    this.zones = site.zones.map((z) => ({ name: z.name, ...(z.sl ? { sl: z.sl } : {}), ...(z.description ? { description: z.description } : {}) }));
+    this.conduits = site.conduits.map((c) => ({ name: c.name, zones: [c.zones[0], c.zones[1]] as [string, string], rules: [] }));
+    for (const c of site.conduits) {
+      for (const text of c.rules) {
+        try {
+          const { rule, at } = this.parseRule(text.trim().split(/\s+/), c.name);
+          this.addRule(c.name, rule, at);
+        } catch (e) {
+          throw new UserError(`conduit ${c.name}: rule "${text}": ${(e as Error).message}`);
+        }
+      }
+    }
+  }
+
+  /**
+   * Parse a rule: "allow from SRC to DST SERVICE [fc CODES] [at N]" (the
+   * leading action word is included). "from" and "to" are optional.
+   */
+  parseRule(words: string[], conduitName?: string): { rule: Omit<Rule, "hits">; at?: number } {
+    const [actionWord, ...rest] = words;
+    const action = (actionWord ?? "").toLowerCase();
+    if (action !== "allow" && action !== "deny") throw new UserError(`a rule starts with allow or deny`);
+    const usage = `${action} from SRC to DST SERVICE${action === "allow" ? " [fc CODES]" : ""} [at N]`;
+    const parts: string[] = [];
+    let fc: number[] | undefined;
+    let at: number | undefined;
+    for (let i = 0; i < rest.length; i++) {
+      const w = rest[i].toLowerCase();
+      if (w === "from" || w === "to") continue;
+      if (w === "fc" || w === "--fc") {
+        if (!rest[i + 1]) throw new UserError("fc needs a list of function codes, e.g. fc 3,4");
+        fc = this.parseFunctionCodes(rest[++i]);
+        continue;
+      }
+      if (w.startsWith("fc=")) {
+        fc = this.parseFunctionCodes(w.slice(3));
+        continue;
+      }
+      if (w === "at" || w === "--at") {
+        at = parseInt(rest[++i] ?? "", 10);
+        if (!Number.isInteger(at) || at < 1) throw new UserError("at needs a rule number, e.g. at 1");
+        continue;
+      }
+      parts.push(rest[i]);
+    }
+    if (parts.length !== 3) throw new UserError(`usage: ${conduitName ? usage : usage}`);
+    if (fc && action === "deny") throw new UserError("function code lists go on allow rules. Traffic that matches no allow rule is denied anyway.");
+    const rule: Omit<Rule, "hits"> = { action, src: this.parseEndpoint(parts[0]), dst: this.parseEndpoint(parts[1]), service: this.parseService(parts[2]) };
+    if (fc) rule.fc = fc;
+    return { rule, at };
   }
 
   // ------------------------------------------------------------ lookup

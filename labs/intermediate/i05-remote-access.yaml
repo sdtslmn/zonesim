@@ -1,4 +1,5 @@
 id: i05-remote-access
+site: riverside-water
 title: Vendor remote access through a jump host
 level: intermediate
 minutes: 12
@@ -9,61 +10,61 @@ intro: |
   vendor's laptop or password is compromised, the attacker lands right next
   to the PLC.
 
-  Route remote access through jump-01 in the DMZ, and require multi-factor
+  Route remote access through ${jump} in the DMZ, and require multi-factor
   authentication there. In this lab you also play the vendor, so you can
-  test the path: `ssh vendor-laptop`, then `rdp ...`.
+  test the path: `ssh ${vendor}`, then `rdp ...`.
 setup:
   - zone create enterprise --sl 1
   - zone create dmz --sl 2
   - zone create operations --sl 2
   - zone create control --sl 3
   - zone create safety --sl 3
-  - zone add enterprise corp-pc
-  - zone add dmz hist-dmz jump-01
-  - zone add operations historian
-  - zone add control hmi-01 ews-01 plc-1
-  - zone add safety sis-1
-  - zone delete site
+  - zone add enterprise ${office}
+  - zone add dmz ${report-server} ${jump}
+  - zone add operations ${historian}
+  - zone add control ${hmi} ${ews} ${plc}
+  - zone add safety ${sis}
+  - zone delete ${plc.zone}
   - conduit create ops-control operations control
-  - fw allow ops-control from historian to plc-1 modbus fc 3,4
+  - fw allow ops-control from ${historian} to ${plc} modbus fc 3,4
   - conduit create ops-safety operations safety
-  - fw allow ops-safety from historian to sis-1 modbus fc 2,4
+  - fw allow ops-safety from ${historian} to ${sis} modbus fc 2,4
   - conduit create control-safety control safety
-  - fw allow control-safety from hmi-01 to sis-1 modbus fc read
+  - fw allow control-safety from ${hmi} to ${sis} modbus fc read
   - conduit create ops-dmz operations dmz
-  - fw allow ops-dmz from historian to hist-dmz https
+  - fw allow ops-dmz from ${historian} to ${report-server} https
   - conduit create ent-dmz enterprise dmz
-  - fw allow ent-dmz from corp-pc to hist-dmz https
-  - conduit create inet-control internet control
-  - fw allow inet-control from vendor-laptop to ews-01 rdp
+  - fw allow ent-dmz from ${office} to ${report-server} https
+  - conduit create inet-control ${vendor.zone} control
+  - fw allow inet-control from ${vendor} to ${ews} rdp
 tasks:
-  - "See the current path: `fw list inet-control`. Try it as the vendor with `ssh vendor-laptop rdp ews-01`, then look at `alerts`."
-  - Let vendor-laptop reach jump-01 over rdp (internet to dmz).
-  - Let jump-01 reach ews-01 over rdp (dmz to control).
-  - "Turn on MFA on jump-01: `host config jump-01 mfa=on`."
+  - "See the current path: `fw list inet-control`. Try it as the vendor with `ssh ${vendor} rdp ${ews}`, then look at `alerts`."
+  - Let ${vendor} reach ${jump} over rdp (internet to dmz).
+  - Let ${jump} reach ${ews} over rdp (dmz to control).
+  - "Turn on MFA on ${jump}: `host config ${jump} mfa=on`."
   - Remove the direct path by deleting conduit inet-control.
-  - "Test as the vendor: `ssh vendor-laptop`, `rdp jump-01`, then `rdp ews-01`. Type `exit` three times to come back."
+  - "Test as the vendor: `ssh ${vendor}`, `rdp ${jump}`, then `rdp ${ews}`. Type `exit` three times to come back."
 checks:
-  - name: The vendor still reaches ews-01, through jump-01
+  - name: The vendor still reaches ${ews}, through ${jump}
     required: vendor-support
-  - name: The vendor cannot reach ews-01 directly
-    flow: { from: vendor-laptop, to: ews-01, service: rdp, expect: blocked }
-  - name: MFA is on at jump-01
-    host: { name: jump-01, mfa: true }
+  - name: The vendor cannot reach ${ews} directly
+    flow: { from: "${vendor}", to: "${ews}", service: rdp, expect: blocked }
+  - name: MFA is on at ${jump}
+    host: { name: "${jump}", mfa: true }
   - name: The internet only reaches the DMZ
     risk: internet-dmz-only
   - name: Remote access passes the design review
     risk: remote-access
 hints:
-  - "`conduit create inet-dmz internet dmz`, then `fw allow inet-dmz from vendor-laptop to jump-01 rdp`."
-  - "`conduit create dmz-control dmz control`, then `fw allow dmz-control from jump-01 to ews-01 rdp`."
+  - "`conduit create inet-dmz ${vendor.zone} dmz`, then `fw allow inet-dmz from ${vendor} to ${jump} rdp`."
+  - "`conduit create dmz-control dmz control`, then `fw allow dmz-control from ${jump} to ${ews} rdp`."
   - "`conduit delete inet-control` removes the direct path."
 solution:
-  - conduit create inet-dmz internet dmz
-  - fw allow inet-dmz from vendor-laptop to jump-01 rdp
+  - conduit create inet-dmz ${vendor.zone} dmz
+  - fw allow inet-dmz from ${vendor} to ${jump} rdp
   - conduit create dmz-control dmz control
-  - fw allow dmz-control from jump-01 to ews-01 rdp
-  - host config jump-01 mfa=on
+  - fw allow dmz-control from ${jump} to ${ews} rdp
+  - host config ${jump} mfa=on
   - conduit delete inet-control
 learned: |
   Remote access from an untrusted network should end in the DMZ, behind a

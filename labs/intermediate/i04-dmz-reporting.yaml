@@ -1,15 +1,16 @@
 id: i04-dmz-reporting
+site: riverside-water
 title: Office reports through the DMZ
 level: intermediate
 minutes: 10
 topic: DMZ
 intro: |
-  Office staff read production reports straight from the plant historian,
+  Office staff read production reports straight from the plant ${historian},
   through conduit ent-ops. That is a path from every office PC into the
   operations zone, and from there one hop to the PLC.
 
   The standard pattern is a DMZ: the historian pushes a copy of its data to
-  hist-dmz, and the office only reads the copy. Nothing goes straight from
+  ${report-server}, and the office only reads the copy. Nothing goes straight from
   the office to the plant.
 setup:
   - zone create enterprise --sl 1
@@ -17,45 +18,45 @@ setup:
   - zone create operations --sl 2
   - zone create control --sl 3
   - zone create safety --sl 3
-  - zone add enterprise corp-pc
-  - zone add dmz hist-dmz jump-01
-  - zone add operations historian
-  - zone add control hmi-01 ews-01 plc-1
-  - zone add safety sis-1
-  - zone delete site
+  - zone add enterprise ${office}
+  - zone add dmz ${report-server} ${jump}
+  - zone add operations ${historian}
+  - zone add control ${hmi} ${ews} ${plc}
+  - zone add safety ${sis}
+  - zone delete ${plc.zone}
   - conduit create ops-control operations control
-  - fw allow ops-control from historian to plc-1 modbus fc 3,4
+  - fw allow ops-control from ${historian} to ${plc} modbus fc 3,4
   - conduit create ops-safety operations safety
-  - fw allow ops-safety from historian to sis-1 modbus fc 2,4
+  - fw allow ops-safety from ${historian} to ${sis} modbus fc 2,4
   - conduit create control-safety control safety
-  - fw allow control-safety from hmi-01 to sis-1 modbus fc read
+  - fw allow control-safety from ${hmi} to ${sis} modbus fc read
   - conduit create ent-ops enterprise operations
-  - fw allow ent-ops from corp-pc to historian https
+  - fw allow ent-ops from ${office} to ${historian} https
 tasks:
-  - "See the shortcut: `fw list ent-ops` and `test corp-pc historian https`."
-  - Let the historian push its data to hist-dmz (operations to dmz, https).
-  - Let corp-pc read the reports from hist-dmz (enterprise to dmz, https).
+  - "See the shortcut: `fw list ent-ops` and `test ${office} ${historian} https`."
+  - Let the historian push its data to ${report-server} (operations to dmz, https).
+  - Let ${office} read the reports from ${report-server} (enterprise to dmz, https).
   - Remove the shortcut by deleting conduit ent-ops.
-  - "Try it from corp-pc: `curl https://hist-dmz/` works and `curl https://historian/` times out."
+  - "Try it from ${office}: `curl https://${report-server}/` works and `curl https://${historian}/` times out."
 checks:
-  - name: The historian copies data to hist-dmz
+  - name: The historian copies data to ${report-server}
     required: historian-replica
-  - name: Office reports work from hist-dmz
+  - name: Office reports work from ${report-server}
     required: office-reports
-  - name: corp-pc cannot reach the historian
-    flow: { from: corp-pc, to: historian, service: https, expect: blocked }
+  - name: ${office} cannot reach the historian
+    flow: { from: "${office}", to: "${historian}", service: https, expect: blocked }
   - name: No conduit connects enterprise and operations
     command: conduit list
     outputNotMatches: 'enterprise ↔ operations|operations ↔ enterprise'
 hints:
-  - "`conduit create ops-dmz operations dmz`, then `fw allow ops-dmz from historian to hist-dmz https`."
-  - "`conduit create ent-dmz enterprise dmz`, then `fw allow ent-dmz from corp-pc to hist-dmz https`."
+  - "`conduit create ops-dmz operations dmz`, then `fw allow ops-dmz from ${historian} to ${report-server} https`."
+  - "`conduit create ent-dmz enterprise dmz`, then `fw allow ent-dmz from ${office} to ${report-server} https`."
   - "`conduit delete ent-ops` removes the shortcut and its rules."
 solution:
   - conduit create ops-dmz operations dmz
-  - fw allow ops-dmz from historian to hist-dmz https
+  - fw allow ops-dmz from ${historian} to ${report-server} https
   - conduit create ent-dmz enterprise dmz
-  - fw allow ent-dmz from corp-pc to hist-dmz https
+  - fw allow ent-dmz from ${office} to ${report-server} https
   - conduit delete ent-ops
 learned: |
   With a DMZ, no connection crosses directly between the office and the

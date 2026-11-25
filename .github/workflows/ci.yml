@@ -22,5 +22,11 @@ jobs:
       - run: npm test
       - name: Every lab is solved by its own solution
         run: node packages/cli/dist/index.js validate-labs
+      - name: The built-in and template sites are valid
+        run: node packages/cli/dist/index.js validate --quiet sites/*.yaml sites/templates/*.yaml
+      - name: Generated files are committed
+        run: |
+          node scripts/build-schema.mjs
+          git diff --exit-code -- schema packages/core/src/sites
       - name: Browser build
         run: npm run build:web

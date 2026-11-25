@@ -1,18 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { Network } from "../src/network.js";
+import { builtinSite } from "../src/sites/index.js";
 
 const h = (n: Network, name: string) => n.needHost(name);
 
 describe("zones and conduits", () => {
   it("starts flat: everything inside the site talks", () => {
-    const n = new Network();
+    const n = new Network(builtinSite());
     expect(n.evaluate(h(n, "corp-pc"), h(n, "plc-1"), "modbus", 6).delivered).toBe(true);
     expect(n.evaluate(h(n, "vendor-laptop"), h(n, "ews-01"), "rdp").delivered).toBe(true);
     expect(n.evaluate(h(n, "vendor-laptop"), h(n, "plc-1"), "modbus").allowed).toBe(false);
   });
 
   it("blocks traffic between zones without a conduit", () => {
-    const n = new Network();
+    const n = new Network(builtinSite());
     n.createZone("office");
     n.addToZone("office", ["corp-pc"]);
     const v = n.evaluate(h(n, "corp-pc"), h(n, "plc-1"), "modbus", 3);
@@ -21,7 +22,7 @@ describe("zones and conduits", () => {
   });
 
   it("applies rules top-down, one-way, with default deny", () => {
-    const n = new Network();
+    const n = new Network(builtinSite());
     n.createZone("ops");
     n.addToZone("ops", ["historian"]);
     n.createConduit("ops-site", "ops", "site");
@@ -34,7 +35,7 @@ describe("zones and conduits", () => {
   });
 
   it("filters Modbus function codes", () => {
-    const n = new Network();
+    const n = new Network(builtinSite());
     n.createZone("ops");
     n.addToZone("ops", ["historian"]);
     n.createConduit("c", "ops", "site");
@@ -48,14 +49,14 @@ describe("zones and conduits", () => {
   });
 
   it("reports nothing listening as allowed but not delivered", () => {
-    const n = new Network();
+    const n = new Network(builtinSite());
     const v = n.evaluate(h(n, "corp-pc"), h(n, "plc-1"), "rdp");
     expect(v.allowed).toBe(true);
     expect(v.delivered).toBe(false);
   });
 
   it("validates names and structure", () => {
-    const n = new Network();
+    const n = new Network(builtinSite());
     expect(() => n.createZone("plc-1")).toThrow(/host name/);
     expect(() => n.createZone("Bad Name")).toThrow();
     expect(() => n.deleteZone("site")).toThrow(/still holds/);

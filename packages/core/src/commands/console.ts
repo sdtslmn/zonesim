@@ -4,7 +4,8 @@
 import type { Shell, CommandFn, CmdContext } from "../shell.js";
 import { quote } from "../shell.js";
 import { LEVEL_NAMES, ruleText, endpointText, SERVICES, type Host, type Rule, type ServiceName } from "../network.js";
-import { DEVICE_MAPS } from "../plant.js";
+import { TABLES, TABLE_NAMES } from "../modbus.js";
+import type { Sim } from "../sim.js";
 import { C, UserError, table, clock, ago, wrapText } from "../util.js";
 import type { Severity } from "../sim.js";
 
@@ -52,16 +53,16 @@ const wantsHelp = (args: string[]) => args.includes("--help") || args.includes("
 
 const hosts: CommandFn = (args, { io, sim }) => {
   if (wantsHelp(args)) {
-    io.stdout("hosts            list every host with its IP, Purdue level, zone and services\nhosts -o wide    also show the operating system\n");
+    io.stdout("hosts            list every host with its IP, Purdue level, zone and services\nhosts -o wide    also show the lab role and operating system\n");
     return 0;
   }
   const wide = args.includes("wide") || args.includes("-owide");
   const rows = sim.net.hosts.map((h) => {
-    const r = [h.name, h.ip, levelText(h.level), h.zone, h.services.join(",") || "-", h.role];
-    if (wide) r.push(h.os);
+    const r = [h.name, h.ip, levelText(h.level), h.zone, h.services.join(",") || "-", h.description];
+    if (wide) r.push(h.role ?? "-", h.os);
     return r;
   });
-  io.stdout(table(["NAME", "IP", "LEVEL", "ZONE", "SERVICES", "ROLE", ...(wide ? ["OS"] : [])], rows));
+  io.stdout(table(["NAME", "IP", "LEVEL", "ZONE", "SERVICES", "DESCRIPTION", ...(wide ? ["LAB ROLE", "OS"] : [])], rows));
   return 0;
 };
 
@@ -76,7 +77,7 @@ const hostCmd: CommandFn = (args, { io, sim }) => {
     needArgs(args, 2, usage);
     const h = sim.net.needHost(name);
     const svc = h.services.map((s) => `${s} (${SERVICES[s].label})`).join(", ") || "none";
-    io.stdout(`${C.bold(h.name)}  ${h.ip}\n  Role:      ${h.role}\n  OS:        ${h.os}\n  Level:     ${levelText(h.level)}\n  Zone:      ${h.zone}\n  Services:  ${svc}\n  MFA:       ${h.mfa ? "on" : "off"}\n`);
+    io.stdout(`${C.bold(h.name)}  ${h.ip}\n  About:     ${h.description}\n  OS:        ${h.os}\n  Level:     ${levelText(h.level)}\n  Zone:      ${h.zone}\n  Services:  ${svc}\n  MFA:       ${h.mfa ? "on" : "off"}${h.role ? `\n  Lab role:  ${h.role}` : ""}${sim.device(h.name) ? `\n  Modbus:    ${sim.device(h.name)!.def.product}, see modbus map ${h.name}` : ""}\n`);
     return 0;
   }
   if (sub === "config") {
@@ -101,19 +102,24 @@ const plant: CommandFn = (args, { io, sim }) => {
     io.stdout("plant    process values, alarms, and whether the data flows the plant needs still work\n");
     return 0;
   }
-  const p = sim.plant;
+  const p = sim.tank;
   const flows = sim.requiredFlows();
   const okCount = flows.filter((f) => f.ok).length;
-  const alarms = p.alarms();
-  const pump = p.pumpRunning ? C.green("running") : "stopped";
+  const alarms = sim.plant.alarms();
   const out: string[] = [];
-  out.push(`${C.bold("Riverside water treatment plant")}   plant time ${clock(sim.t)}`);
-  out.push(`  Tank T-101 level     ${p.level.toFixed(1).padStart(5)} %  ${bar(p.level)}  start ${p.plcHr[0] / 10} %, stop ${p.plcHr[1] / 10} %`);
-  out.push(`  Inlet pump P-101     ${pump} (${p.autoMode ? "auto" : C.yellow("manual")})`);
-  out.push(`  Chlorine residual    ${p.chlorine.toFixed(2)} mg/L, setpoint ${(p.plcHr[2] / 100).toFixed(2)}, dosing ${p.dosingRunning ? "on" : C.red("off")}`);
-  out.push(`  Safety system sis-1  ${p.bypassed ? C.red("BYPASSED") : p.sisTrip ? C.yellow("TRIPPED") : C.green("armed")}, trips at ${p.sisHr[0] / 10} %`);
-  out.push(`  HMI hmi-01           ${sim.hmiOnline ? C.green("online") : C.red("COMM FAIL: no data from plc-1")}`);
-  if (p.overflowSeconds > 0) out.push(`  Overflow             ${C.red(`${Math.round(p.overflowSeconds)} s of spillage so far`)}`);
+  out.push(`${C.bold(sim.site.name)}   plant time ${clock(sim.t)}`);
+  if (p) {
+    const t = p.tags;
+    const pump = p.pumpRunning ? C.green("running") : "stopped";
+    out.push(`  Tank ${t.tank} level`.padEnd(23) + `${p.level.toFixed(1).padStart(5)} %  ${bar(p.level)}  start ${p.startSp / 10} %, stop ${p.stopSp / 10} %`);
+    out.push(`  Inlet pump ${t.pump}`.padEnd(23) + `${pump} (${p.autoMode ? "auto" : C.yellow("manual")})`);
+    out.push(`  Chlorine residual    ${p.chlorine.toFixed(2)} mg/L, setpoint ${(p.chlorineSp / 100).toFixed(2)}, dosing ${p.dosingRunning ? "on" : C.red("off")}`);
+    const sis = sim.site.ids.safety[0];
+    out.push(`  Safety system${sis ? ` ${sis}` : ""}`.padEnd(23) + `${p.bypassed ? C.red("BYPASSED") : p.sisTrip ? C.yellow("TRIPPED") : C.green("armed")}, trips at ${p.tripSp / 10} %`);
+    if (p.overflowSeconds > 0) out.push(`  Overflow             ${C.red(`${Math.round(p.overflowSeconds)} s of spillage so far`)}`);
+  }
+  const hmiHost = sim.site.hmi;
+  if (hmiHost) out.push(`  HMI ${hmiHost.host}`.padEnd(23) + `${sim.hmiOnline ? C.green("online") : C.red(`COMM FAIL: no data from ${hmiHost.device}`)}`);
   out.push(`  Alarms               ${alarms.length ? alarms.map((a) => (a.severity === "critical" || a.severity === "high" ? C.red(a.text) : C.yellow(a.text))).join("; ") : C.green("none")}`);
   out.push(`  Data flows           ${okCount === flows.length ? C.green(`${okCount}/${flows.length} working`) : C.red(`${okCount}/${flows.length} working`)}`);
   for (const f of flows.filter((x) => !x.ok)) out.push(`    ${C.red("✘")} ${f.flow.title}\n      ${C.gray(f.reason)}`);
@@ -122,26 +128,33 @@ const plant: CommandFn = (args, { io, sim }) => {
 };
 
 const hmi: CommandFn = (args, { io, sim }) => {
+  const h = sim.site.hmi;
   if (wantsHelp(args)) {
-    io.stdout("hmi    the operator screen on hmi-01. It shows what the HMI last read from the controllers.\n");
+    io.stdout(`hmi    the operator screen${h ? ` on ${h.host}` : ""}. It shows what the HMI last read from the controllers.\n`);
+    return 0;
+  }
+  if (!h) {
+    io.stdout("This site has no HMI defined.\n");
     return 0;
   }
   const v = sim.hmiView;
+  const tags = sim.plant.tags;
   const online = sim.hmiOnline;
   const W = 52;
   const row = (s: string) => `│ ${s}${" ".repeat(Math.max(0, W - 2 - s.replace(/\x1b\[[0-9;]*m/g, "").length))} │`;
   const dot = (on: boolean) => (on ? C.green("●") : C.gray("○"));
+  const title = `${h.host}  ${sim.site.name}`.slice(0, W - 2);
   const lines = [
     `┌${"─".repeat(W)}┐`,
-    row(C.bold("hmi-01  Riverside WTP  T-101")),
+    row(C.bold(title)),
     row(""),
-    row(`Level  ${bar(v.level, 20)}  ${v.level.toFixed(1)} %`),
-    row(`P-101 inlet pump    ${dot(v.pump)} ${v.pump ? "RUN" : "STOP"}    Mode ${v.auto ? "AUTO" : C.yellow("MANUAL")}`),
-    row(`P-201 dosing pump   ${dot(v.dosing)} ${v.dosing ? "ON" : C.red("OFF")}`),
+    row(`${(tags.tank ?? "Tank").padEnd(6)} ${bar(v.level, 20)}  ${v.level.toFixed(1)} %`),
+    row(`${tags.pump ?? "Pump"} inlet pump`.padEnd(20) + `${dot(v.pump)} ${v.pump ? "RUN" : "STOP"}    Mode ${v.auto ? "AUTO" : C.yellow("MANUAL")}`),
+    row(`${tags.dosing ?? "Dosing"} dosing pump`.padEnd(20) + `${dot(v.dosing)} ${v.dosing ? "ON" : C.red("OFF")}`),
     row(`Chlorine            ${v.chlorine.toFixed(2)} mg/L`),
-    row(`SIS                 ${v.bypass ? C.red("BYPASSED") : v.sisTrip ? C.yellow("TRIPPED") : C.green("ARMED")}`),
+    row(`Safety system       ${v.bypass ? C.red("BYPASSED") : v.sisTrip ? C.yellow("TRIPPED") : C.green("ARMED")}`),
     row(""),
-    row(online ? C.green("COMM OK") : C.red(`COMM FAIL  values are ${Math.round(sim.t - sim.hmiLast["plc-1"])} s old`)),
+    row(online ? C.green("COMM OK") : C.red(`COMM FAIL  values are ${Math.round(sim.t - (sim.hmiLast[h.device] ?? 0))} s old`)),
     `└${"─".repeat(W)}┘`,
   ];
   io.stdout(lines.join("\n") + "\n");
@@ -499,7 +512,10 @@ export const ssh: CommandFn = async (args, ctx) => {
   const target = sim.net.needHost(args[0]);
   const command = args.slice(1);
   if (!host) {
-    if (target.kind === "ot" && target.level <= 1) throw new UserError(`${target.name} is a controller, you cannot log in to it. Talk to it with modbus from a host, e.g. ssh hmi-01 modbus read ${target.name} hr 0 3`);
+    if (sim.device(target.name)) {
+      const from = sim.site.hmi?.host ?? sim.net.hosts.find((h) => h.level === 2)?.name ?? "HOST";
+      throw new UserError(`${target.name} is a controller, you cannot log in to it. Talk to it with modbus from a host, e.g. ssh ${from} modbus read ${target.name} hr 0 3`);
+    }
     if (command.length) return shell.onHost(target.name, quote(command), io);
     shell.stack.push(target.name);
     io.stdout(`Connected to ${C.bold(target.name)} (${target.ip}) over the management network as ${target.user}.\nCommands you run here send traffic from ${target.name}. Type ${C.cyan("exit")} to go back.\n`);
@@ -521,13 +537,15 @@ export const ssh: CommandFn = async (args, ctx) => {
   return 0;
 };
 
-export function mapText(device: "plc-1" | "sis-1"): string {
-  const m = DEVICE_MAPS[device];
-  const out = [`${C.bold(m.title)}   ${m.vendor} ${m.product}, firmware ${m.revision}`, `Modbus TCP port 502, unit id 1. Addresses are 0-based.`];
-  const names: Record<string, string> = { coil: "Coils (read fc 1, write fc 5/15)", di: "Discrete inputs (read fc 2)", ir: "Input registers (read fc 4)", hr: "Holding registers (read fc 3, write fc 6/16)" };
-  for (const t of ["coil", "di", "ir", "hr"] as const) {
-    out.push("", C.bold(names[t]));
-    for (const p of m[t]) out.push(`  ${t} ${p.addr}  ${p.tag.padEnd(14)} ${p.description}${p.units ? C.gray(` (${p.units})`) : ""}`);
+export function mapText(sim: Sim, host: string): string {
+  const d = sim.device(host);
+  if (!d) throw new UserError(`${host} is not a Modbus device. Devices in this site: ${[...sim.devices.keys()].join(", ") || "none"}`);
+  const m = d.def;
+  const out = [`${C.bold(`${host}: ${m.title}`)}   ${m.vendor} ${m.product}, firmware ${m.revision}`, `Modbus TCP port 502, unit id 1. Addresses are 0-based.`];
+  for (const t of TABLES) {
+    if (!m.points[t].length) continue;
+    out.push("", C.bold(TABLE_NAMES[t]));
+    for (const p of m.points[t]) out.push(`  ${t} ${p.addr}  ${p.tag.padEnd(14)} ${p.description}${p.units ? C.gray(` (${p.units})`) : ""}`);
   }
   return out.join("\n") + "\n";
 }

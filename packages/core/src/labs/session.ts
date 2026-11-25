@@ -1,6 +1,7 @@
 // Runs a lab: builds a fresh plant, plays the setup, then evaluates checks.
 
-import { Sim, type SimOptions } from "../sim.js";
+import { Sim } from "../sim.js";
+import type { Site } from "../site.js";
 import { createShell } from "../create.js";
 import type { FileSystem } from "../fs.js";
 import type { IO, Shell } from "../shell.js";
@@ -32,12 +33,13 @@ export class LabSession {
   readonly shell: Shell;
   private hintIndex = 0;
 
+  /** The lab must already be resolved for the site (see resolveLab). */
   constructor(
     readonly lab: Lab | undefined,
     readonly fs: FileSystem,
-    simOptions: SimOptions = {},
+    opts: { site?: Site; clock?: () => number } = {},
   ) {
-    this.sim = new Sim(simOptions);
+    this.sim = new Sim(opts);
     this.shell = createShell(this.sim, fs);
   }
 
@@ -135,12 +137,23 @@ export class LabSession {
     }
 
     if (c.register) {
-      const v = sim.plant.point(c.register.host, c.register.table, c.register.addr);
-      const shown = `${c.register.host} ${c.register.table} ${c.register.addr} is ${v ?? "missing"}`;
+      const dev = sim.device(String(c.register.host));
+      if (!dev) return fail(`${c.register.host} is not a Modbus device`);
+      let v: number | undefined;
+      let where: string;
+      if (c.register.signal) {
+        const at = dev.find(c.register.signal);
+        v = at ? sim.plant.get(c.register.signal) : undefined;
+        where = at ? `${c.register.host} ${at.table} ${at.point.addr} (${at.point.tag})` : `${c.register.host} signal ${c.register.signal}`;
+      } else {
+        v = dev.point(c.register.table ?? "hr", Number(c.register.addr));
+        where = `${c.register.host} ${c.register.table} ${c.register.addr}`;
+      }
+      const shown = `${where} is ${v ?? "missing"}`;
       if (v === undefined) return fail(shown);
-      if (c.register.equals !== undefined && v !== c.register.equals) return fail(shown);
-      if (c.register.gte !== undefined && v < c.register.gte) return fail(shown);
-      if (c.register.lte !== undefined && v > c.register.lte) return fail(shown);
+      if (c.register.equals !== undefined && v !== Number(c.register.equals)) return fail(shown);
+      if (c.register.gte !== undefined && v < Number(c.register.gte)) return fail(shown);
+      if (c.register.lte !== undefined && v > Number(c.register.lte)) return fail(shown);
       return pass();
     }
 

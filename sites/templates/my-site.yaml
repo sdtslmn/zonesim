@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=https://sdtslmn.github.io/zonesim/schema/site.schema.json
+#
+# Your own site, starting from the built-in Riverside plant. Change what you
+# need and delete the rest: anything you leave out comes from riverside-water.
+#
+# Use it in the browser: Site tab, then "Load a site file".
+# Check it from a clone of the repo: npm run validate -- my-site.yaml
+# Help on every field: https://github.com/sdtslmn/zonesim/blob/main/docs/help/customize.md
+
+schema: zonesim-site/1
+id: my-water-plant
+name: Northgate water works
+description: A copy of the Riverside plant with our own names, addresses and setpoints.
+extends: riverside-water
+
+# Rename hosts or zones. Every reference (zones, rules, devices, flows, IDS)
+# is updated for you. Labs keep working because they use roles, not names.
+rename:
+  plc-1: tank-plc
+  hmi-01: scada-hmi
+
+# Change fields of existing hosts (matched by name, the new name after a
+# rename). Add a host by giving a new name with all its fields.
+hosts:
+  - { name: tank-plc, ip: 192.168.10.10, os: "NA-500, firmware 3.1.0", description: Reservoir tank PLC }
+  - { name: sis-1, ip: 192.168.10.20 }
+  - { name: scada-hmi, ip: 192.168.20.10 }
+  - { name: ews-01, ip: 192.168.20.30 }
+  - { name: historian, ip: 192.168.30.10 }
+
+# Process names and numbers. Any parameter you leave out keeps its default.
+process:
+  tags:
+    source: reservoir
+    consumer: city
+  params:
+    stopLevel: 75
+    inflow: 1.5
+
+# Controller details. Point maps are inherited unless you replace a table.
+# Here the setpoints live at holding registers 100 to 102, as in our PLC
+# program. A table you give replaces the inherited one completely.
+devices:
+  tank-plc:
+    vendor: Northgate Automation
+    product: NA-500
+    revision: 3.1.0
+    points:
+      hr:
+        - { addr: 100, tag: LIC101_SP_START, signal: setpoint.start, description: Pump start level in auto mode, units: tenths of a % }
+        - { addr: 101, tag: LIC101_SP_STOP, signal: setpoint.stop, description: Pump stop level in auto mode, units: tenths of a % }
+        - { addr: 102, tag: AIC201_SP, signal: setpoint.chlorine, description: Chlorine dosing setpoint, units: hundredths of mg/L }

@@ -1,4 +1,5 @@
 id: s01-safety-bypass
+site: riverside-water
 title: Someone bypassed the safety system
 level: scenario
 minutes: 15
@@ -10,66 +11,66 @@ intro: |
 
   Make the plant safe first. Then find the source and lock the safety system
   down so this cannot happen again. Every minute counts: the tank fills by
-  about 0.7 % per second.
+  about ${param.inflow-param.demand} % per second.
 setup:
   - zone create enterprise --sl 1
   - zone create dmz --sl 2
   - zone create operations --sl 2
   - zone create control --sl 3
   - zone create safety --sl 3
-  - zone add enterprise corp-pc
-  - zone add dmz hist-dmz jump-01
-  - zone add operations historian
-  - zone add control hmi-01 ews-01 plc-1
-  - zone add safety sis-1
-  - zone delete site
+  - zone add enterprise ${office}
+  - zone add dmz ${report-server} ${jump}
+  - zone add operations ${historian}
+  - zone add control ${hmi} ${ews} ${plc}
+  - zone add safety ${sis}
+  - zone delete ${plc.zone}
   - conduit create ops-control operations control
-  - fw allow ops-control from historian to plc-1 modbus fc 3,4
+  - fw allow ops-control from ${historian} to ${plc} modbus fc 3,4
   - conduit create ops-safety operations safety
-  - fw allow ops-safety from historian to sis-1 modbus
+  - fw allow ops-safety from ${historian} to ${sis} modbus
   - conduit create control-safety control safety
   - fw allow control-safety from control to safety modbus
   - conduit create ops-dmz operations dmz
-  - fw allow ops-dmz from historian to hist-dmz https
+  - fw allow ops-dmz from ${historian} to ${report-server} https
   - conduit create ent-dmz enterprise dmz
-  - fw allow ent-dmz from corp-pc to hist-dmz https
-  - ssh ews-01 modbus write sis-1 coil 0 1
-  - ssh ews-01 modbus write plc-1 coil 2 0
-  - ssh ews-01 modbus write plc-1 coil 0 1
+  - fw allow ent-dmz from ${office} to ${report-server} https
+  - ssh ${ews} modbus write ${sis} coil ${sis:sis.bypass} 1
+  - ssh ${ews} modbus write ${plc} coil ${plc:control.auto} 0
+  - ssh ${ews} modbus write ${plc} coil ${plc:pump.command} 1
 settle: 5
 tasks:
-  - From hmi-01, put plc-1 back in auto mode (coil 2 = 1). In auto, the PLC stops the pump at the stop level.
-  - Remove the safety bypass (sis-1 coil 0 = 0). Today that still works from the control zone, which is exactly the problem.
+  - From ${hmi}, put ${plc} back in auto mode (coil ${plc:control.auto} = 1). In auto, the PLC stops the pump at the stop level.
+  - Remove the safety bypass (${sis} coil ${sis:sis.bypass} = 0). Today that still works from the control zone, which is exactly the problem.
   - Find which host made the writes and write its name into source.txt.
-  - "Lock down the safety zone: hmi-01 and the historian may only read sis-1, and no host may write to it."
+  - "Lock down the safety zone: ${hmi} and the historian may only read ${sis}, and no host may write to it."
   - Run `report` and check that "No host can write to the safety system" passes.
 checks:
-  - name: plc-1 is back in auto mode (coil 2 = 1)
-    register: { host: plc-1, table: coil, addr: 2, equals: 1 }
-  - name: The safety bypass is off (sis-1 coil 0 = 0)
-    register: { host: sis-1, table: coil, addr: 0, equals: 0 }
+  - name: ${plc} is back in auto mode (coil ${plc:control.auto} = 1)
+    register: { host: "${plc}", signal: control.auto, equals: 1 }
+  - name: The safety bypass is off (${sis} coil ${sis:sis.bypass} = 0)
+    register: { host: "${sis}", signal: sis.bypass, equals: 0 }
   - name: The tank is not overflowing
     state: { path: plant.overflowing, equals: false }
   - name: source.txt names the host that made the writes
-    file: { path: source.txt, matches: 'ews-01|10\.10\.20\.30' }
+    file: { path: source.txt, matches: '${ews}|${ews.ip}' }
   - name: No host can write to the safety system
     risk: sis-read-only
-  - name: The HMI and the historian still read sis-1
+  - name: The HMI and the historian still read ${sis}
     required: hmi-sis
-  - name: The historian still reads sis-1
+  - name: The historian still reads ${sis}
     required: historian-sis
 hints:
-  - "Safety first: `ssh hmi-01 modbus write plc-1 coil 2 1`, then `ssh hmi-01 modbus write sis-1 coil 0 0`."
-  - "`alerts` shows who wrote to sis-1 and plc-1."
-  - "Rule 1 on control-safety lets the whole control zone send anything to the safety zone. Replace it with a read-only rule for hmi-01, and narrow the historian's rule on ops-safety to fc 2,4."
+  - "Safety first: `ssh ${hmi} modbus write ${plc} coil ${plc:control.auto} 1`, then `ssh ${hmi} modbus write ${sis} coil ${sis:sis.bypass} 0`."
+  - "`alerts` shows who wrote to ${sis} and ${plc}."
+  - "Rule 1 on control-safety lets the whole control zone send anything to the safety zone. Replace it with a read-only rule for ${hmi}, and narrow the historian's rule on ops-safety to fc 2,4."
 solution:
-  - ssh hmi-01 modbus write plc-1 coil 2 1
-  - ssh hmi-01 modbus write sis-1 coil 0 0
-  - echo ews-01 > source.txt
+  - ssh ${hmi} modbus write ${plc} coil ${plc:control.auto} 1
+  - ssh ${hmi} modbus write ${sis} coil ${sis:sis.bypass} 0
+  - echo ${ews} > source.txt
   - fw delete control-safety 1
-  - fw allow control-safety from hmi-01 to sis-1 modbus fc read
+  - fw allow control-safety from ${hmi} to ${sis} modbus fc read
   - fw delete ops-safety 1
-  - fw allow ops-safety from historian to sis-1 modbus fc 2,4
+  - fw allow ops-safety from ${historian} to ${sis} modbus fc 2,4
 learned: |
   Safety first, forensics second: you restored automatic control and the
   safety function before chasing the attacker. The safety system was only as

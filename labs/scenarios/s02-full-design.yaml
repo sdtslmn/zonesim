@@ -1,4 +1,5 @@
 id: s02-full-design
+site: riverside-water
 title: Segment the whole plant from scratch
 level: scenario
 minutes: 25
@@ -11,21 +12,21 @@ intro: |
   No step-by-step help this time. `report` tells you where you stand, and
   `test` lets you check a single flow before you rely on it.
 tasks:
-  - Run `report`. You start with 8 of 8 data flows working and most security checks failing.
+  - Run `report`. You start with every data flow working and most security checks failing.
   - Design zones for the office, the DMZ, operations, control and safety, and move the hosts.
   - Add conduits with least-privilege rules, and filter Modbus function codes where it matters.
-  - Route the vendor's remote access through jump-01, with MFA.
-  - Finish when `report` shows 8 of 8 data flows and 8 of 8 security checks, and the safety zone has SL-T 3 or more.
+  - Route the vendor's remote access through ${jump}, with MFA.
+  - Finish when `report` shows every data flow and every security check passing, and the safety zone has SL-T 3 or more.
 checks:
   - name: Every plant data flow works
     required: all
   - name: Every security check in the report passes
     risk: all
   - name: The safety zone has SL-T 3 or more
-    zone: { host: sis-1, slAtLeast: 3 }
+    zone: { host: "${sis}", slAtLeast: 3 }
 hints:
   - "Start with the zones from lab I01, then add conduits as in I02, filtering as in I03, the DMZ as in I04 and remote access as in I05."
-  - "Delete the flat zone site at the end. That also removes the old edge conduit with the direct vendor path."
+  - "Delete the flat zone ${plc.zone} at the end. That also removes the old edge conduit with the direct vendor path."
   - "`report` shows the first problem for each failing check, and `test SRC DST SERVICE [fc N]` checks one flow."
 solution:
   - zone create enterprise --sl 1
@@ -33,27 +34,27 @@ solution:
   - zone create operations --sl 2
   - zone create control --sl 3
   - zone create safety --sl 3
-  - zone add enterprise corp-pc
-  - zone add dmz hist-dmz jump-01
-  - zone add operations historian
-  - zone add control hmi-01 ews-01 plc-1
-  - zone add safety sis-1
-  - zone delete site
+  - zone add enterprise ${office}
+  - zone add dmz ${report-server} ${jump}
+  - zone add operations ${historian}
+  - zone add control ${hmi} ${ews} ${plc}
+  - zone add safety ${sis}
+  - zone delete ${plc.zone}
   - conduit create ops-control operations control
-  - fw allow ops-control from historian to plc-1 modbus fc 3,4
+  - fw allow ops-control from ${historian} to ${plc} modbus fc 3,4
   - conduit create ops-safety operations safety
-  - fw allow ops-safety from historian to sis-1 modbus fc 2,4
+  - fw allow ops-safety from ${historian} to ${sis} modbus fc 2,4
   - conduit create control-safety control safety
-  - fw allow control-safety from hmi-01 to sis-1 modbus fc read
+  - fw allow control-safety from ${hmi} to ${sis} modbus fc read
   - conduit create ops-dmz operations dmz
-  - fw allow ops-dmz from historian to hist-dmz https
+  - fw allow ops-dmz from ${historian} to ${report-server} https
   - conduit create ent-dmz enterprise dmz
-  - fw allow ent-dmz from corp-pc to hist-dmz https
-  - conduit create inet-dmz internet dmz
-  - fw allow inet-dmz from vendor-laptop to jump-01 rdp
+  - fw allow ent-dmz from ${office} to ${report-server} https
+  - conduit create inet-dmz ${vendor.zone} dmz
+  - fw allow inet-dmz from ${vendor} to ${jump} rdp
   - conduit create dmz-control dmz control
-  - fw allow dmz-control from jump-01 to ews-01 rdp
-  - host config jump-01 mfa=on
+  - fw allow dmz-control from ${jump} to ${ews} rdp
+  - host config ${jump} mfa=on
 learned: |
   That is a complete zone and conduit design for a small plant: an office
   zone that only reaches the DMZ, a DMZ that brokers reports and remote

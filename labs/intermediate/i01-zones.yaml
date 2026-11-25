@@ -1,4 +1,5 @@
 id: i01-zones
+site: riverside-water
 title: Group the hosts into zones
 level: intermediate
 minutes: 12
@@ -13,41 +14,41 @@ intro: |
   assessment. The higher it is, the stronger the attacker it must resist.
 tasks:
   - "Create the zones: enterprise (SL-T 1), dmz (SL-T 2), operations (SL-T 2), control (SL-T 3) and safety (SL-T 3). For example `zone create control --sl 3`."
-  - "Move the hosts: corp-pc to enterprise; hist-dmz and jump-01 to dmz; historian to operations; hmi-01, ews-01 and plc-1 to control; sis-1 to safety."
-  - Delete the old flat zone, site, once it is empty.
+  - "Move the hosts: ${office} to enterprise; ${report-server} and ${jump} to dmz; ${historian} to operations; ${hmi}, ${ews} and ${plc} to control; ${sis} to safety."
+  - Delete the old flat zone, ${plc.zone}, once it is empty.
   - Run `plant`. Most data flows are now blocked, because nothing connects the zones yet. That is expected, the next lab adds conduits.
 checks:
-  - name: corp-pc is in an office zone without plant hosts
-    zone: { host: corp-pc, notWith: [hist-dmz, historian, hmi-01, plc-1, sis-1] }
-  - name: hist-dmz and jump-01 share a DMZ zone
-    zone: { host: hist-dmz, with: [jump-01], notWith: [corp-pc, historian, plc-1] }
+  - name: ${office} is in an office zone without plant hosts
+    zone: { host: "${office}", notWith: ["${report-server}", "${historian}", "${hmi}", "${plc}", "${sis}"] }
+  - name: ${report-server} and ${jump} share a DMZ zone
+    zone: { host: "${report-server}", with: ["${jump}"], notWith: ["${office}", "${historian}", "${plc}"] }
   - name: The historian has an operations zone of its own
-    zone: { host: historian, notWith: [corp-pc, hist-dmz, hmi-01, plc-1, sis-1] }
-  - name: hmi-01, ews-01 and plc-1 share the control zone, with SL-T 3 or more
-    zone: { host: plc-1, with: [hmi-01, ews-01], notWith: [historian, sis-1], slAtLeast: 3 }
-  - name: sis-1 is alone in the safety zone, with SL-T 3 or more
-    zone: { host: sis-1, alone: true, slAtLeast: 3 }
-  - name: The flat zone site is gone
+    zone: { host: "${historian}", notWith: ["${office}", "${report-server}", "${hmi}", "${plc}", "${sis}"] }
+  - name: ${hmi}, ${ews} and ${plc} share the control zone, with SL-T 3 or more
+    zone: { host: "${plc}", with: ["${hmi}", "${ews}"], notWith: ["${historian}", "${sis}"], slAtLeast: 3 }
+  - name: ${sis} is alone in the safety zone, with SL-T 3 or more
+    zone: { host: "${sis}", alone: true, slAtLeast: 3 }
+  - name: The flat zone ${plc.zone} is gone
     command: zone list
-    outputNotMatches: '^site\b'
+    outputNotMatches: '^${plc.zone}\b'
   - name: Office, DMZ and plant hosts are in separate zones
     risk: segmented
 hints:
-  - "`zone create enterprise --sl 1`, then `zone add enterprise corp-pc`."
-  - "`zone add` takes several hosts at once: `zone add control hmi-01 ews-01 plc-1`."
-  - "A zone must be empty before `zone delete site` works. `zone list` shows what is left in it."
+  - "`zone create enterprise --sl 1`, then `zone add enterprise ${office}`."
+  - "`zone add` takes several hosts at once: `zone add control ${hmi} ${ews} ${plc}`."
+  - "A zone must be empty before `zone delete ${plc.zone}` works. `zone list` shows what is left in it."
 solution:
   - zone create enterprise --sl 1
   - zone create dmz --sl 2
   - zone create operations --sl 2
   - zone create control --sl 3
   - zone create safety --sl 3
-  - zone add enterprise corp-pc
-  - zone add dmz hist-dmz jump-01
-  - zone add operations historian
-  - zone add control hmi-01 ews-01 plc-1
-  - zone add safety sis-1
-  - zone delete site
+  - zone add enterprise ${office}
+  - zone add dmz ${report-server} ${jump}
+  - zone add operations ${historian}
+  - zone add control ${hmi} ${ews} ${plc}
+  - zone add safety ${sis}
+  - zone delete ${plc.zone}
 learned: |
   Zones group assets that share a level of risk and trust. The safety system
   gets a zone of its own because a compromise there could hurt people, and

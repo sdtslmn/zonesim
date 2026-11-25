@@ -3,6 +3,10 @@
 
 import { LabSession, type CheckResult } from "./labs/session.js";
 import { sortLabs, findLab, type Lab } from "./labs/schema.js";
+import { resolveLab } from "./labs/resolve.js";
+import { validateLabsOnSite, type LabFit } from "./labs/validate.js";
+import { siteCompatible, type Site } from "./site.js";
+import { builtinSite } from "./sites/index.js";
 import { MemoryFS } from "./fs.js";
 import type { IO, CommandFn, Shell } from "./shell.js";
 import { C, termMd, wrapText, reflow } from "./util.js";
@@ -21,6 +25,8 @@ export interface TrainerOptions {
   sleep?: (ms: number) => Promise<void>;
   /** Terminal width in columns, for wrapping lab text. */
   columns?: () => number;
+  /** The site to use. Defaults to the built-in Riverside plant. */
+  site?: Site;
 }
 
 const LEVEL_TAG: Record<string, string> = { beginner: "B", intermediate: "I", advanced: "A", scenario: "S" };
@@ -30,7 +36,7 @@ export const CONSOLE_HELP = `${C.bold("ZoneSim console")}  (out-of-band manageme
 ${C.bold("Look around")}
   hosts                          hosts, IPs, Purdue levels, zones and services
   plant                          process values, alarms and the plant's data flows
-  hmi                            what the operator sees on hmi-01
+  hmi                            what the operator sees on the HMI
   ssh HOST [COMMAND]             log in to a host; its commands then send traffic from it
 ${C.bold("Design zones and conduits")}
   zone list|create|add|show|set|delete
@@ -47,15 +53,15 @@ ${C.bold("Labs")}
   labs, lab N, task, check, hint, solution, reset, next, sandbox
 
 Shell: pipes (| grep, head, tail, wc, sort), ; && ||, > and >> into files, echo, cat, ls, rm.
-Every command has --help, for example: fw --help
+Every command has --help, for example: fw --help. The Help tab in the browser explains everything.
 `;
 
-export function hostHelp(name: string, ip: string): string {
+export function hostHelp(name: string, ip: string, devices: string[] = []): string {
   return `${C.bold(`You are on ${name}`)} (${ip}). Commands here send traffic from this host.
 
-  modbus read|write|info HOST ...  talk Modbus to plc-1 or sis-1  (modbus --help)
+  modbus read|write|info HOST ...  talk Modbus to ${devices.length ? devices.join(" or ") : "a controller"}  (modbus --help)
   modbus map HOST                  the register map from the vendor manual
-  nmap TARGET                      find open ports; TARGET can be 10.10.10.0/24
+  nmap TARGET                      find open ports; TARGET can be a network, e.g. ${ip.split(".").slice(0, 3).join(".")}.0/24
   ping HOST, curl URL, ip addr
   rdp HOST, ssh HOST               remote login to another host, across the network
   exit                             leave this host
@@ -68,15 +74,52 @@ export class Trainer {
   readonly labs: Lab[];
   readonly fs = new MemoryFS();
   session!: LabSession;
+  /** The current lab as written, and filled in for the site it runs on. */
   lab?: Lab;
+  resolved?: Lab;
   done: Set<string>;
   lastResults?: CheckResult[];
+  /** The site chosen by the learner. Labs that do not fit it run on their own site. */
+  site: Site;
+  /** Which labs work on the chosen site (filled in by checkLabs). */
+  fits = new Map<string, LabFit>();
+  /** Why the current lab is not running on the chosen site, if it is not. */
+  siteNote?: string;
   private opts: TrainerOptions;
 
   constructor(opts: TrainerOptions) {
     this.opts = opts;
     this.labs = sortLabs(opts.labs);
     this.done = new Set(opts.progress?.load() ?? []);
+    this.site = opts.site ?? builtinSite();
+  }
+
+  /** Switch site. Call checkLabs() afterwards to learn which labs fit it. */
+  setSite(site: Site): void {
+    this.site = site;
+    this.fits.clear();
+  }
+
+  /** Run every lab's solution against the chosen site. */
+  async checkLabs(): Promise<LabFit[]> {
+    const fits = await validateLabsOnSite(this.labs, this.site);
+    this.fits = new Map(fits.map((f) => [f.lab.id, f]));
+    this.changed();
+    return fits;
+  }
+
+  /** The site a lab will run on, and the lab filled in for it. */
+  siteFor(lab: Lab): { site: Site; resolved: Lab; note?: string } {
+    const fit = this.fits.get(lab.id);
+    if (siteCompatible(this.site, lab.site) && fit?.ok !== false) {
+      const r = resolveLab(lab, this.site);
+      if (r.lab) return { site: this.site, resolved: r.lab };
+    }
+    const own = builtinSite(lab.site);
+    const r = resolveLab(lab, own);
+    if (!r.lab) throw new Error(`lab ${lab.id} does not resolve on its own site: ${r.error}`);
+    const why = fit?.problems[0] ?? (siteCompatible(this.site, lab.site) ? resolveLab(lab, this.site).error : `${this.site.name} does not extend ${own.name}`);
+    return { site: own, resolved: r.lab, note: `This lab runs on ${own.name}. It does not fit ${this.site.name}${why ? `: ${why}` : ""}.` };
   }
 
   get sim() {
@@ -114,23 +157,31 @@ export class Trainer {
   async startSandbox(announce = true): Promise<void> {
     this.fs.clear();
     this.lab = undefined;
+    this.resolved = undefined;
+    this.siteNote = undefined;
     this.lastResults = undefined;
-    this.session = new LabSession(undefined, this.fs, { clock: this.opts.clock });
+    this.session = new LabSession(undefined, this.fs, { site: this.site, clock: this.opts.clock });
     this.registerLabCommands(this.session.shell);
     await this.session.setup();
-    if (announce) this.print(`${C.bold("Sandbox")}: the plant as found, with a flat network. Type ${C.cyan("help")} for commands, ${C.cyan("labs")} for guided labs.\n`);
+    if (announce) this.print(`${C.bold("Sandbox")}: ${this.site.name} as found. Type ${C.cyan("help")} for commands, ${C.cyan("labs")} for guided labs.\n`);
     this.changed();
   }
 
   async startLab(lab: Lab, announce = true): Promise<void> {
     this.fs.clear();
+    const { site, resolved, note } = this.siteFor(lab);
     this.lab = lab;
+    this.resolved = resolved;
+    this.siteNote = note;
     this.lastResults = undefined;
-    this.session = new LabSession(lab, this.fs, { clock: this.opts.clock });
+    this.session = new LabSession(resolved, this.fs, { site, clock: this.opts.clock });
     this.registerLabCommands(this.session.shell);
     const errors = await this.session.setup();
     for (const e of errors) this.print(C.yellow(`(setup) ${e}\n`));
-    if (announce) this.print(this.labIntro(lab));
+    if (announce) {
+      if (note) this.print(C.yellow(note) + "\n");
+      this.print(this.labIntro(resolved));
+    }
     this.changed();
   }
 
@@ -206,7 +257,7 @@ export class Trainer {
       C.bold("Tasks"),
       ...lab.tasks.map((t, i) => wrapText(`${i + 1}. ${termMd(t)}`, this.width, "  ")),
       "",
-      C.gray(`Type ${"check"} when you are done, ${"hint"} if you are stuck.`),
+      C.gray(wrapText("Type check when you are done, hint if you are stuck.", this.width)),
       "",
     ];
     return out.join("\n") + "\n";
@@ -229,7 +280,7 @@ export class Trainer {
     io.stdout("\n");
     if (passed === results.length && this.lab) {
       io.stdout(C.green(C.bold("All checks passed. Lab complete!")) + "\n");
-      if (this.lab.learned) io.stdout("\n" + wrapText(termMd(reflow(this.lab.learned)), this.width) + "\n");
+      if (this.resolved?.learned) io.stdout("\n" + wrapText(termMd(reflow(this.resolved.learned)), this.width) + "\n");
       if (this.lab.refs.length) io.stdout(C.gray(`\nRelated: ${this.lab.refs.join("; ")}\n`));
       this.done.add(this.lab.id);
       this.opts.progress?.save([...this.done]);
@@ -250,7 +301,7 @@ export class Trainer {
       return false;
     };
     shell.register("help", both((_a, { io, host }) => {
-      io.stdout(host ? hostHelp(host.name, host.ip) : CONSOLE_HELP);
+      io.stdout(host ? hostHelp(host.name, host.ip, [...this.sim.devices.keys()]) : CONSOLE_HELP);
       return 0;
     }));
     shell.register("labs", both((_a, { io }) => {
@@ -259,7 +310,7 @@ export class Trainer {
     }));
     shell.register("lab", both(async (args, { io }) => {
       if (!args[0]) {
-        if (this.lab) io.stdout(this.labIntro(this.lab));
+        if (this.resolved) io.stdout(this.labIntro(this.resolved));
         else io.stdout(this.labList());
         return 0;
       }
@@ -273,7 +324,7 @@ export class Trainer {
     }));
     const tasks: CommandFn = (_a, { io }) => {
       if (!needLab(io)) return 1;
-      io.stdout(this.lab!.tasks.map((t, i) => wrapText(`${i + 1}. ${termMd(t)}`, this.width, "  ")).join("\n") + "\n");
+      io.stdout(this.resolved!.tasks.map((t, i) => wrapText(`${i + 1}. ${termMd(t)}`, this.width, "  ")).join("\n") + "\n");
       return 0;
     };
     shell.register("task", both(tasks));
@@ -292,7 +343,7 @@ export class Trainer {
     shell.register("solution", both((_a, { io }) => {
       if (!needLab(io)) return 1;
       io.stdout(C.yellow("One way to solve it (try it yourself first, you learn more that way):") + "\n");
-      for (const s of this.lab!.solution) io.stdout(`  ${C.cyan(s)}\n`);
+      for (const s of this.resolved!.solution) io.stdout(`  ${C.cyan(s)}\n`);
       return 0;
     }));
     shell.register("reset", both(async (_a, { io }) => {

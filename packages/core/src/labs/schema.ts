@@ -17,8 +17,8 @@ export interface LabCheck {
   flow?: { from: string; to: string; service: string; fc?: number; expect: "allowed" | "blocked" };
   /** Where a host sits. */
   zone?: { host: string; equals?: string; with?: string[]; notWith?: string[]; alone?: boolean; slAtLeast?: number };
-  /** A controller point, read directly (no traffic). */
-  register?: { host: "plc-1" | "sis-1"; table: "coil" | "di" | "ir" | "hr"; addr: number; equals?: number; gte?: number; lte?: number };
+  /** A controller point, read directly (no traffic): by signal, or by table and address. */
+  register?: { host: string; signal?: string; table?: "coil" | "di" | "ir" | "hr"; addr?: number; equals?: number; gte?: number; lte?: number };
   /** A required plant data flow by id, or "all". */
   required?: string;
   /** A design check from the report by id, or "all". */
@@ -37,6 +37,8 @@ export type Level = "beginner" | "intermediate" | "advanced" | "scenario";
 
 export interface Lab {
   id: string;
+  /** The site the lab was written for. It also runs on sites that extend it. */
+  site: string;
   title: string;
   level: Level;
   minutes: number;
@@ -90,6 +92,7 @@ export function parseLab(text: string, source = "lab"): Lab {
   }
   return {
     id,
+    site: typeof raw.site === "string" ? raw.site : "riverside-water",
     title: str(raw.title, "title", id),
     level,
     minutes: typeof raw.minutes === "number" ? raw.minutes : 10,

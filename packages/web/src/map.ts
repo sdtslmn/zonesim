@@ -217,7 +217,7 @@ export class NetworkMap {
       if (!b) continue;
       const cls = `host k-${h.kind}${this.selected === h.name ? " sel" : ""}${alerting.includes(h.name) ? " alerting" : ""}`;
       const lock = h.mfa ? `<text x="${b.x + b.w - 28}" y="${b.y + 14}" class="mfa">MFA</text>` : "";
-      hostParts.push(`<g class="${cls}" data-host="${esc(h.name)}"><rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="6"/><text x="${b.x + 8}" y="${b.y + 14}" class="host-name">${esc(h.name)}</text><text x="${b.x + 8}" y="${b.y + 27}" class="host-ip">${esc(h.ip)}</text>${lock}<title>${esc(`${h.name} (${h.ip})\n${h.role}\nservices: ${h.services.join(", ") || "none"}`)}</title></g>`);
+      hostParts.push(`<g class="${cls}" data-host="${esc(h.name)}"><rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="6"/><text x="${b.x + 8}" y="${b.y + 14}" class="host-name">${esc(h.name)}</text><text x="${b.x + 8}" y="${b.y + 27}" class="host-ip">${esc(h.ip)}</text>${lock}<title>${esc(`${h.name} (${h.ip})\n${h.description}\nservices: ${h.services.join(", ") || "none"}`)}</title></g>`);
     }
 
     if (empty.length) {
@@ -250,7 +250,7 @@ export class NetworkMap {
     const services = h.services.map((s) => `${s} (${SERVICES[s].label})`).join(", ") || "none";
     const shell = h.kind === "ot" && h.level <= 1 ? `Controllers have no shell: talk to it with <code>modbus</code> from a host.` : `Run commands from it: <code>ssh ${esc(h.name)}</code>`;
     const html = `<div class="host-detail"><strong>${esc(h.name)}</strong> <span class="meta">${esc(h.ip)} · L${h.level} ${esc(LEVEL_NAMES[String(h.level)] ?? "")} · zone ${esc(h.zone)}</span>
-      <div>${esc(h.role)}. ${esc(h.os)}.</div>
+      <div>${esc(h.description)}. ${esc(h.os)}.${h.role ? ` <span class="meta">Role: ${esc(h.role)}</span>` : ""}</div>
       <div class="meta">Services: ${esc(services)}${h.services.includes("rdp") || h.services.includes("ssh") ? ` · MFA ${h.mfa ? "on" : "off"}` : ""}</div>
       <div class="meta">${shell}</div>
       ${rows ? `<table class="conv"><tr><th>Conversation</th><th>Service</th><th>By</th><th>Last</th></tr>${rows}</table>` : `<p class="meta">No traffic seen yet.</p>`}
