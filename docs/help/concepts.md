@@ -19,7 +19,30 @@ up to the business:
 | 0 | Sensors, pumps and valves | the tank and pumps |
 
 The levels are a starting point for zones, not a rule. ZoneSim draws the
-map in Purdue bands.
+map in Purdue bands. The other plants follow the same pattern: at the
+compressor station the control centre sits at level 3 across a WAN, and in
+the data centre the DCIM is at level 3 and the BMS at level 2.
+
+## The processes
+
+**Water treatment (Riverside).** A pump fills a tank between two levels and
+chlorine is dosed into the water. The safety system stops the pump on
+high-high level, independent of the PLC.
+
+**Gas compression (Kestrel).** The compressor speed holds the discharge
+pressure. At low flow a centrifugal compressor can **surge**: gas flows
+backwards through it in violent cycles that damage it in seconds. The
+anti-surge controller prevents this by recycling gas through a valve. If the
+pressure climbs too high, the ESD system trips the compressor and closes the
+station valve; past that, a relief valve vents gas to atmosphere. The flow
+computer measures the gas sold, so its meter factor is money.
+
+**Data centre cooling (Harbour).** Two chillers cool water, one running and
+one spare (N+1). Pumps move the water to CRAH units that cool the air in the
+cold aisle. ASHRAE recommends server inlet temperatures up to 27 °C and
+allows up to 32 °C for common equipment; past about 35 °C servers shut
+themselves down. The fire panel is life safety equipment: it can be isolated
+for maintenance, and it releases a clean agent into the hall.
 
 ## Zones and conduits
 

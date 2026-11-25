@@ -112,3 +112,16 @@ describe("riverside-segmented", () => {
     expect(sim.hmiOnline).toBe(true);
   });
 });
+
+describe("the gas and data centre sites", () => {
+  for (const id of ["gas-compressor-station", "data-centre-cooling"]) {
+    it(`${id} starts with every data flow working and the design checks failing`, () => {
+      const sim = new Sim({ site: builtinSite(id), clock: () => 0 });
+      sim.settle(30);
+      expect(sim.requiredFlows().filter((f) => !f.ok)).toEqual([]);
+      expect(sim.risks().filter((r) => r.ok).length).toBeLessThanOrEqual(1);
+      expect(sim.hmiOnline).toBe(true);
+      expect(sim.plant.alarms().filter((a) => a.severity !== "low")).toEqual([]);
+    });
+  }
+});

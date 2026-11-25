@@ -1,0 +1,95 @@
+id: g10-overpressure
+site: gas-compressor-station
+title: Someone bypassed the pressure trip
+level: scenario
+minutes: 15
+topic: Incident response
+intro: |
+  14:05. The HMI shows compressor ${tag.compressor} at full speed in manual,
+  the discharge pressure climbing, and the ESD system ${sis} BYPASSED. Nothing
+  but the relief valve at ${param.reliefPressure} bar will stop the pressure,
+  and a lifting relief valve vents gas to atmosphere. Someone is inside the
+  control zone.
+
+  Make the station safe first. Then find the source and lock the safety
+  system down.
+setup:
+  - zone create enterprise --sl 1
+  - zone create dmz --sl 2
+  - zone create operations --sl 2
+  - zone create control --sl 3
+  - zone create safety --sl 3
+  - zone set ${control-centre.zone} --sl 2
+  - zone add enterprise ${office}
+  - zone add dmz ${report-server} ${jump}
+  - zone add operations ${historian}
+  - zone add control ${hmi} ${ews} ${plc} ${meter}
+  - zone add safety ${sis}
+  - zone delete ${plc.zone}
+  - conduit create ops-control operations control
+  - fw allow ops-control from ${historian} to ${plc} modbus fc 3,4
+  - fw allow ops-control from ${historian} to ${meter} modbus fc 3,4
+  - conduit create ops-safety operations safety
+  - fw allow ops-safety from ${historian} to ${sis} modbus
+  - conduit create control-safety control safety
+  - fw allow control-safety from control to safety modbus
+  - conduit create wan-control ${control-centre.zone} control
+  - fw allow wan-control from ${control-centre} to ${plc} modbus fc 3,4,5,6
+  - fw allow wan-control from ${control-centre} to ${meter} modbus fc 3,4
+  - conduit create ops-dmz operations dmz
+  - fw allow ops-dmz from ${historian} to ${report-server} https
+  - conduit create ent-dmz enterprise dmz
+  - fw allow ent-dmz from ${office} to ${report-server} https
+  - conduit create inet-dmz ${vendor.zone} dmz
+  - fw allow inet-dmz from ${vendor} to ${report-server} https
+  - ssh ${ews} modbus write ${sis} coil ${sis:sis.bypass} 1
+  - ssh ${ews} modbus write ${plc} hr ${plc:setpoint.speed} 1000
+  - ssh ${ews} modbus write ${plc} coil ${plc:control.auto} 0
+settle: 5
+tasks:
+  - From ${hmi}, put the speed back in auto (coil ${plc:control.auto} = 1). In auto, the PLC slows the compressor to hold the setpoint.
+  - Once the pressure is below ${param.tripPressure} bar, remove the bypass (${sis} coil ${sis:sis.bypass} = 0). Today that still works from the control zone, which is exactly the problem.
+  - Find which host made the writes and write its name into source.txt.
+  - "Lock down the safety zone: ${hmi} and the historian may only read ${sis}, and no host may write to it."
+  - Run `report` and check that "No host can write to the safety system" passes.
+checks:
+  - name: Speed control is back in auto
+    register: { host: "${plc}", signal: control.auto, equals: 1 }
+  - name: The trip bypass is off
+    register: { host: "${sis}", signal: sis.bypass, equals: 0 }
+  - name: No gas is venting
+    state: { path: plant.venting, equals: false }
+  - name: The compressor is still running, so customers keep their gas
+    state: { path: plant.running, equals: true }
+  - name: source.txt names the host that made the writes
+    file: { path: source.txt, matches: '${ews}|${ews.ip}' }
+  - name: No host can write to the safety system
+    risk: sis-read-only
+  - name: The HMI still reads ${sis}
+    required: hmi-sis
+  - name: The historian still reads ${sis}
+    required: historian-sis
+hints:
+  - "Safety first: `ssh ${hmi} modbus write ${plc} coil ${plc:control.auto} 1`, check the pressure with `plant`, then `ssh ${hmi} modbus write ${sis} coil ${sis:sis.bypass} 0`."
+  - "If the pressure is still above ${param.tripPressure} bar when the bypass comes off, the ESD trips the compressor and closes the station valve. That is safe, but customers lose supply until you restart it."
+  - "`alerts` shows who wrote to ${sis}. Rule 1 on control-safety lets the whole control zone send anything to the safety zone; replace it with a read-only rule for ${hmi}, and narrow the historian's rule on ops-safety to fc 2,4."
+solution:
+  - ssh ${hmi} modbus write ${plc} coil ${plc:control.auto} 1
+  - ssh ${hmi} modbus write ${sis} coil ${sis:sis.bypass} 0
+  - echo ${ews} > source.txt
+  - fw delete control-safety 1
+  - fw allow control-safety from ${hmi} to ${sis} modbus fc read
+  - fw delete ops-safety 1
+  - fw allow ops-safety from ${historian} to ${sis} modbus fc 2,4
+learned: |
+  The order mattered: restoring automatic control brought the pressure down
+  before the trip was armed again, so the station made the situation safe
+  without cutting customers off. The ESD system was only as strong as the
+  conduit in front of it, and a zone-to-zone "any Modbus" rule let a
+  compromised engineering workstation switch it off. Keep safety systems
+  read-only from the network, and treat bypasses as a controlled, logged
+  operation.
+refs:
+  - IEC 61511 (independence of the safety system)
+  - ISA-TR84.00.09 (cybersecurity in the safety lifecycle)
+  - MITRE ATT&CK for ICS T0880 (loss of safety)

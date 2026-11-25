@@ -1,0 +1,43 @@
+id: g02-read-pressures
+site: gas-compressor-station
+title: Read the pressures over Modbus
+level: beginner
+minutes: 10
+topic: Modbus basics
+intro: |
+  The station HMI polls ${plc} over Modbus TCP every few seconds. Pressures
+  sit in input registers as whole numbers in tenths of a bar, so 650 means
+  65.0 bar. Settings such as the discharge pressure setpoint sit in holding
+  registers.
+
+  In this lab you read the station the same way the HMI does.
+tasks:
+  - "Read the unit PLC's register map from the vendor manual: `modbus map ${plc}`. This sends no traffic."
+  - "Log in to the HMI host: `ssh ${hmi}`."
+  - "Read the discharge pressure, input register ${plc:pressure.discharge}: `modbus read ${plc} ir ${plc:pressure.discharge}`. Then read the suction pressure, input register ${plc:pressure.suction}."
+  - Read the surge margin, input register ${plc:surge.margin}. It is how far the compressor is from surge, in percent.
+  - Read the discharge pressure setpoint, holding register ${plc:setpoint.discharge}.
+  - Type `exit`, and write the setpoint in bar into setpoint.txt.
+checks:
+  - name: The setpoint was read from ${hmi} (function code 3)
+    command: flows --mine
+    outputMatches: '${hmi}\s+${plc}\s+modbus\s+\S*\b3\b'
+  - name: setpoint.txt holds the discharge pressure setpoint in bar
+    file: { path: setpoint.txt, matches: '^\s*${param.setpoint}(\.0+)?\s*(bar)?\s*$' }
+hints:
+  - "`modbus read ${plc} hr ${plc:setpoint.discharge}` reads the setpoint with function code 3."
+  - "A raw value of ${param.setpoint*10} in tenths of a bar is ${param.setpoint} bar. Write it with `echo ${param.setpoint} > setpoint.txt`."
+solution:
+  - ssh ${hmi} modbus read ${plc} ir ${plc:pressure.discharge}
+  - ssh ${hmi} modbus read ${plc} ir ${plc:pressure.suction}
+  - ssh ${hmi} modbus read ${plc} ir ${plc:surge.margin}
+  - ssh ${hmi} modbus read ${plc} hr ${plc:setpoint.discharge}
+  - echo ${param.setpoint} > setpoint.txt
+learned: |
+  Function code 4 reads input registers (measurements), function code 3
+  holding registers (settings). Any host that reaches port 502 on the unit
+  PLC reads the whole station this way, with no login. The surge margin is
+  worth watching: at low flow the anti-surge valve recycles gas to keep the
+  compressor out of surge.
+refs:
+  - Modbus Application Protocol Specification v1.1b3

@@ -1,0 +1,94 @@
+id: d07-modbus-dpi
+site: data-centre-cooling
+title: Make monitoring read-only
+level: intermediate
+minutes: 12
+topic: Deep packet inspection
+intro: |
+  Your conduits allow Modbus, and plain Modbus is all or nothing. The DCIM
+  only needs to read. The BMS needs to run the chiller plant, but on the
+  power meter and the fire panel it only needs to watch. A write to the fire
+  panel can isolate the suppression, or release the agent into a hall full
+  of people and servers.
+
+  Reads are function codes 1, 2, 3, 4 and 43. Writes are 5, 6, 15 and 16.
+setup:
+  - zone create enterprise --sl 1
+  - zone create dmz --sl 2
+  - zone create operations --sl 2
+  - zone create control --sl 3
+  - zone create power --sl 2
+  - zone create safety --sl 3
+  - zone add enterprise ${office}
+  - zone add dmz ${report-server} ${jump}
+  - zone add operations ${historian}
+  - zone add control ${hmi} ${ews} ${plc}
+  - zone add power ${meter}
+  - zone add safety ${sis}
+  - zone delete ${plc.zone}
+  - conduit create ops-control operations control
+  - fw allow ops-control from ${historian} to ${plc} modbus
+  - conduit create ops-power operations power
+  - fw allow ops-power from ${historian} to ${meter} modbus
+  - conduit create ops-safety operations safety
+  - fw allow ops-safety from ${historian} to ${sis} modbus
+  - conduit create control-power control power
+  - fw allow control-power from ${hmi} to ${meter} modbus
+  - conduit create control-safety control safety
+  - fw allow control-safety from ${hmi} to ${sis} modbus
+  - conduit create ops-dmz operations dmz
+  - fw allow ops-dmz from ${historian} to ${report-server} https
+  - conduit create ent-dmz enterprise dmz
+  - fw allow ent-dmz from ${office} to ${report-server} https
+  - conduit create inet-dmz ${vendor.zone} dmz
+  - fw allow inet-dmz from ${customer} to ${report-server} https
+tasks:
+  - "See the problem: `test ${hmi} ${sis} modbus fc 5`. Function code 5 writes a coil, such as the manual release."
+  - Limit the DCIM to function codes 3 and 4 towards ${plc} and ${meter}, and 2 and 4 towards ${sis}.
+  - Limit ${hmi} to reads on ${meter} and ${sis}. It keeps full access to ${plc}, inside its own zone.
+  - "Prove it: from the DCIM, try `modbus write ${plc} hr ${plc:setpoint.chw} 300`. It should time out. Then find it in `fw log`."
+checks:
+  - name: The BMS cannot write to the fire panel
+    flow: { from: "${hmi}", to: "${sis}", service: modbus, fc: 5, expect: blocked }
+  - name: The DCIM cannot write to ${plc}
+    flow: { from: "${historian}", to: "${plc}", service: modbus, fc: 6, expect: blocked }
+  - name: The DCIM still reads everything it records
+    required: dcim-plc
+  - name: The DCIM still reads the fire panel
+    required: dcim-fire
+  - name: The BMS still shows the fire panel
+    required: bms-fire
+  - name: The BMS still shows IT load and PUE
+    required: bms-power
+  - name: No host can write to the safety system
+    risk: sis-read-only
+  - name: The DCIM can only read
+    risk: historian-read-only
+  - name: You tried a write from the DCIM and the firewall blocked it
+    command: fw log
+    outputMatches: '${historian}\s+${plc}\s+modbus fc (5|6|15|16)'
+hints:
+  - "`fw delete ops-control 1`, then `fw allow ops-control from ${historian} to ${plc} modbus fc 3,4`. Do the same on ops-power and ops-safety (fc 2,4)."
+  - "On control-power and control-safety, replace the rule with `... modbus fc read`. `fc read` is shorthand for 1,2,3,4,43."
+  - "`ssh ${historian} modbus write ${plc} hr ${plc:setpoint.chw} 300` should time out, and `fw log` shows why."
+solution:
+  - fw delete ops-control 1
+  - fw allow ops-control from ${historian} to ${plc} modbus fc 3,4
+  - fw delete ops-power 1
+  - fw allow ops-power from ${historian} to ${meter} modbus fc 3,4
+  - fw delete ops-safety 1
+  - fw allow ops-safety from ${historian} to ${sis} modbus fc 2,4
+  - fw delete control-power 1
+  - fw allow control-power from ${hmi} to ${meter} modbus fc read
+  - fw delete control-safety 1
+  - fw allow control-safety from ${hmi} to ${sis} modbus fc read
+  - "ssh ${historian} modbus write ${plc} hr ${plc:setpoint.chw} 300   # times out, as it should"
+learned: |
+  Monitoring systems such as the DCIM are often the most connected hosts in
+  a facility, which makes them a favourite stepping stone. Read-only rules
+  mean a compromised DCIM can watch the hall but not change it. Fire panels
+  usually offer monitoring interfaces; where one also accepts commands,
+  the network must not let them through.
+refs:
+  - IEC 62443-3-3 SR 5.2 (zone boundary protection)
+  - NFPA 2001 (clean agent fire extinguishing systems)

@@ -217,7 +217,21 @@ const state = {
   siteMsg: undefined as { kind: "error" | "success" | "info"; html: string } | undefined,
   editorText: "",
   editorOpen: false,
+  /** Plant groups open in the Labs tab. */
+  openPlants: new Set<string>(),
 };
+
+const PLANT_KIND: Record<string, string> = {
+  "riverside-water": "drinking water",
+  "gas-compressor-station": "gas pipeline",
+  "data-centre-cooling": "data centre",
+};
+
+/** Open the plant group of the lab or site in use. */
+function openCurrentPlant(): void {
+  const id = trainer.lab?.site ?? (trainer.session ? [trainer.sim.site.id, ...trainer.sim.site.extends].find((x) => PLANT_KIND[x]) : undefined) ?? "riverside-water";
+  state.openPlants.add(id);
+}
 
 const panel = $("panel");
 const view = $("view");
@@ -297,7 +311,7 @@ function renderTabs(): void {
     b.classList.toggle("active", on);
     b.setAttribute("aria-selected", String(on));
   });
-  $("site-chip").textContent = `Site: ${trainer.site.name}`;
+  $("site-chip").textContent = `Site: ${trainer.session ? trainer.sim.site.name : trainer.site.name}`;
 }
 
 function selectTab(t: string): void {
@@ -325,37 +339,49 @@ function renderSide(): void {
   if (state.left === "help") panel.innerHTML = helpPanel(state.help);
   else if (state.left === "site") panel.innerHTML = sitePanel();
   else if (state.labView === "lab" && trainer.lab) panel.innerHTML = labPanel();
-  else panel.innerHTML = labListPanel();
+  else {
+    openCurrentPlant();
+    panel.innerHTML = labListPanel();
+  }
   panel.scrollTop = top;
 }
 
 function labListPanel(): string {
-  const site = trainer.site;
-  let html = `<h2>Labs</h2><p class="meta">Short exercises on ${esc(site.name)}, each checked automatically. ${trainer.done.size} of ${labs.length} done.</p>`;
-  let level = "";
-  trainer.labs.forEach((l, i) => {
-    if (l.level !== level) {
-      if (level) html += "</ul>";
-      level = l.level;
-      html += `<h3>${level}</h3><ul class="lab-list">`;
-    }
-    const fit = trainer.fits.get(l.id);
-    const badge = fit && !fit.ok ? `<span class="badge" title="${esc(fit.problems[0] ?? "")}">on ${esc(builtinSite(l.site).name.split(" ")[0])}</span>` : "";
-    html += `<li data-lab="${esc(l.id)}" class="${trainer.lab?.id === l.id ? "current" : ""}" tabindex="0"><span class="${trainer.done.has(l.id) ? "done" : ""}"><b>${i + 1}.</b> ${esc(l.title)}</span><span class="meta">${badge}${l.minutes} min</span></li>`;
-  });
-  html += `</ul><h3>Or explore freely</h3><p>The <a href="#" data-action="sandbox">sandbox</a> is the plant as found, with no lab. Type <code>help</code> in the terminal for every command, or open the <a href="#" data-goto="help">Help</a> tab.</p>
-  <p class="meta">ZoneSim ${VERSION}. The plant, devices and vendor are fictional. <a href="${esc(REPO_URL)}" target="_blank" rel="noopener">Source on GitHub</a>.</p>`;
+  let html = `<h2>Labs</h2><p class="meta">Short exercises on three simulated plants, each checked automatically. ${trainer.done.size} of ${labs.length} done.</p>`;
+  const sites = [...new Set(trainer.labs.map((l) => l.site))];
+  for (const siteId of sites) {
+    const plantLabs = trainer.labs.filter((l) => l.site === siteId);
+    const done = plantLabs.filter((l) => trainer.done.has(l.id)).length;
+    const open = state.openPlants.has(siteId);
+    html += `<details class="plant-group" data-plant="${esc(siteId)}"${open ? " open" : ""}><summary class="lab-plant">${esc(builtinSite(siteId).name)} <span class="meta">${PLANT_KIND[siteId] ?? ""} · ${done} of ${plantLabs.length} done</span></summary>`;
+    html += `<p class="meta plant-links"><a href="#" data-action="explore-site" data-id="${esc(siteId)}">Explore this plant</a> in the sandbox, or start with lab 1.</p>`;
+    let level = "";
+    plantLabs.forEach((l, i) => {
+      if (l.level !== level) {
+        if (level) html += "</ul>";
+        level = l.level;
+        html += `<h3>${level}</h3><ul class="lab-list">`;
+      }
+      const fit = trainer.fits.get(l.id);
+      const badge = fit && !fit.ok ? `<span class="badge" title="${esc(fit.problems[0] ?? "")}">on ${esc(builtinSite(l.site).name.split(" ")[0])}</span>` : "";
+      html += `<li data-lab="${esc(l.id)}" class="${trainer.lab?.id === l.id ? "current" : ""}" tabindex="0"><span class="${trainer.done.has(l.id) ? "done" : ""}"><b>${i + 1}.</b> ${esc(l.title)}</span><span class="meta">${badge}${l.minutes} min</span></li>`;
+    });
+    html += "</ul></details>";
+  }
+  html += `<h3>Or explore freely</h3><p>The <a href="#" data-action="sandbox">sandbox</a> is the plant as found, with no lab. Type <code>help</code> in the terminal for every command, or open the <a href="#" data-goto="help">Help</a> tab.</p>
+  <p class="meta">ZoneSim ${VERSION}. The plants, devices and vendors are fictional. <a href="${esc(REPO_URL)}" target="_blank" rel="noopener">Source on GitHub</a>.</p>`;
   return html;
 }
 
 function labPanel(): string {
   const lab = trainer.resolved ?? trainer.lab!;
-  const i = trainer.labs.findIndex((l) => l.id === lab.id);
+  const plantLabs = trainer.plantLabs(trainer.lab!);
+  const i = plantLabs.findIndex((l) => l.id === lab.id);
   const results = trainer.lastResults;
   const complete = !!results && results.every((r) => r.passed);
   const next = trainer.nextLab();
   let html = `<p class="crumbs"><a href="#" data-action="all-labs">← All labs</a></p>
-  <p class="meta">Lab ${i + 1} of ${labs.length} · ${lab.level} · about ${lab.minutes} min · ${esc(lab.topic)}</p>
+  <p class="meta">${esc(trainer.sim.site.name)} · lab ${i + 1} of ${plantLabs.length} · ${lab.level} · about ${lab.minutes} min · ${esc(lab.topic)}</p>
   <h2>${esc(lab.title)}</h2>
   ${trainer.siteNote ? `<div class="notice info">${esc(trainer.siteNote)}</div>` : ""}
   <div class="intro">${md(lab.intro)}</div>
@@ -370,7 +396,7 @@ function labPanel(): string {
     html += `<ul class="results">${results.map((r) => `<li class="${r.passed ? "ok" : "bad"}">${esc(r.name)}${r.detail && !r.passed ? `<span class="detail">${esc(r.detail)}</span>` : ""}</li>`).join("")}</ul>`;
   }
   if (complete) {
-    html += `<div class="notice success"><strong>Lab complete.</strong>${lab.learned ? md(lab.learned) : ""}${lab.refs.length ? `<p class="meta">Related: ${lab.refs.map(esc).join("; ")}</p>` : ""}${next ? `<button class="btn primary" data-cmd="next">Next: ${esc(next.title)}</button>` : "<p>That was the last lab. Well done.</p>"}</div>`;
+    html += `<div class="notice success"><strong>Lab complete.</strong>${lab.learned ? md(lab.learned) : ""}${lab.refs.length ? `<p class="meta">Related: ${lab.refs.map(esc).join("; ")}</p>` : ""}${next ? `<button class="btn primary" data-cmd="next">Next: ${esc(next.title)}</button>` : `<p>That was the last lab for this plant. Well done. <a href="#" data-action="all-labs">Pick another plant</a>.</p>`}</div>`;
   }
   return html;
 }
@@ -390,7 +416,11 @@ function sitePanel(): string {
     if (bad.length > 3) labsHtml += `<details class="why"><summary>Why the other ${bad.length} do not fit</summary>${rows}</details>`;
     else if (bad.length) labsHtml += rows;
   }
-  const entries = listSites();
+  const order = ["riverside-water", "riverside-segmented", "gas-compressor-station", "data-centre-cooling"];
+  const rank = (id: string) => (order.indexOf(id) + 1 || order.length + 1);
+  const entries = listSites().sort((a, b) => Number(!a.builtin) - Number(!b.builtin) || rank(a.id) - rank(b.id));
+  const running = trainer.session ? trainer.sim.site : site;
+  const elsewhere = running.id !== site.id ? `<div class="notice info">The current lab runs on ${esc(running.name)}. The site you choose here is for the sandbox and for the labs written for its plant.</div>` : "";
   const rows = entries
     .map(
       (e) => `<li class="${e.id === site.id ? "current" : ""}">
@@ -404,6 +434,7 @@ function sitePanel(): string {
     .join("");
   const msg = state.siteMsg ? `<div class="notice ${state.siteMsg.kind}" id="site-msg">${state.siteMsg.html}</div>` : "";
   return `<h2>Site</h2>
+  ${elsewhere}
   <div class="site-card">
     <div class="site-name">${esc(site.name)}</div>
     <div class="meta">${esc(site.id)}${site.extends.length ? ` · extends ${site.extends.map(esc).join(" → ")}` : ""}${own ? " · yours" : " · built in"}</div>
@@ -578,7 +609,13 @@ panel.addEventListener("input", (e) => {
 });
 
 panel.addEventListener("toggle", (e) => {
-  if ((e.target as HTMLElement).id === "site-editor") state.editorOpen = (e.target as HTMLDetailsElement).open;
+  const el = e.target as HTMLDetailsElement;
+  if (el.id === "site-editor") state.editorOpen = el.open;
+  const plant = el.dataset?.plant;
+  if (plant) {
+    if (el.open) state.openPlants.add(plant);
+    else state.openPlants.delete(plant);
+  }
 }, true);
 
 panel.addEventListener("change", (e) => {
@@ -593,6 +630,14 @@ async function siteAction(action: string, id?: string): Promise<void> {
   switch (action) {
     case "sandbox":
       return openSandbox();
+    case "explore-site": {
+      if (!id || busy) return;
+      const site = builtinSite(id);
+      trainer.setSite(site);
+      setActiveSite(site.id);
+      if (site.id !== DEFAULT_SITE) await trainer.checkLabs();
+      return openSandbox();
+    }
     case "all-labs":
       state.labView = "list";
       renderSide();

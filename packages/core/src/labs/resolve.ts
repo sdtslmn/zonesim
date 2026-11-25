@@ -71,20 +71,20 @@ export function resolvePlaceholder(body: string, site: Site): string | number {
     return h;
   };
   if (/[*/+-]/.test(b.replace(/^[a-z0-9-]+:[a-z0-9_.]+$/, "")) && /param\./.test(b)) {
-    const expr = b.replace(/param\.([A-Za-z]+)/g, (_m, name: string) => {
+    const expr = b.replace(/param\.([A-Za-z][A-Za-z0-9]*)/g, (_m, name: string) => {
       const v = site.process.params[name];
       if (v === undefined) throw new Error(`unknown process parameter "${name}"`);
       return String(v);
     });
     return Math.round(evalArithmetic(expr) * 1000) / 1000;
   }
-  let m = b.match(/^param\.([A-Za-z]+)$/);
+  let m = b.match(/^param\.([A-Za-z][A-Za-z0-9]*)$/);
   if (m) {
     const v = site.process.params[m[1]];
     if (v === undefined) throw new Error(`unknown process parameter "${m[1]}"`);
     return v;
   }
-  m = b.match(/^tag\.([A-Za-z]+)$/);
+  m = b.match(/^tag\.([A-Za-z][A-Za-z0-9]*)$/);
   if (m) {
     const v = site.process.tags[m[1]];
     if (v === undefined) throw new Error(`unknown process tag "${m[1]}"`);

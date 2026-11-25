@@ -1,0 +1,93 @@
+id: d10-fire-isolated
+site: data-centre-cooling
+title: Someone isolated the fire suppression
+level: scenario
+minutes: 15
+topic: Incident response
+intro: |
+  02:10. The BMS shows both chillers disabled, the chilled water warming,
+  and the fire panel ${sis} reporting the ${tag.hall} suppression ISOLATED.
+  Nobody booked maintenance. Someone is inside the control zone.
+
+  Restore the cooling and the fire protection first. Then find the source
+  and lock the life safety zone down.
+setup:
+  - zone create enterprise --sl 1
+  - zone create dmz --sl 2
+  - zone create operations --sl 2
+  - zone create control --sl 3
+  - zone create power --sl 2
+  - zone create safety --sl 3
+  - zone add enterprise ${office}
+  - zone add dmz ${report-server} ${jump}
+  - zone add operations ${historian}
+  - zone add control ${hmi} ${ews} ${plc}
+  - zone add power ${meter}
+  - zone add safety ${sis}
+  - zone delete ${plc.zone}
+  - conduit create ops-control operations control
+  - fw allow ops-control from ${historian} to ${plc} modbus fc 3,4
+  - conduit create ops-power operations power
+  - fw allow ops-power from ${historian} to ${meter} modbus fc 3,4
+  - conduit create ops-safety operations safety
+  - fw allow ops-safety from ${historian} to ${sis} modbus
+  - conduit create control-power control power
+  - fw allow control-power from ${hmi} to ${meter} modbus fc read
+  - conduit create control-safety control safety
+  - fw allow control-safety from control to safety modbus
+  - conduit create ops-dmz operations dmz
+  - fw allow ops-dmz from ${historian} to ${report-server} https
+  - conduit create ent-dmz enterprise dmz
+  - fw allow ent-dmz from ${office} to ${report-server} https
+  - conduit create inet-dmz ${vendor.zone} dmz
+  - fw allow inet-dmz from ${customer} to ${report-server} https
+  - ssh ${ews} modbus write ${sis} coil ${sis:fire.isolate} 1
+  - ssh ${ews} modbus write ${plc} coil ${plc:chiller2.enable} 0
+  - ssh ${ews} modbus write ${plc} coil ${plc:chiller1.enable} 0
+settle: 60
+tasks:
+  - From ${hmi}, enable both chillers again (${plc} coils ${plc:chiller1.enable} and ${plc:chiller2.enable} = 1).
+  - Remove the isolation (${sis} coil ${sis:fire.isolate} = 0). Today that still works from the control zone, which is exactly the problem.
+  - Find which host made the writes and write its name into source.txt.
+  - "Lock down the safety zone: ${hmi} and ${historian} may only read ${sis}, and no host may write to it."
+  - Run `report` and check that "No host can write to the safety system" passes.
+checks:
+  - name: Chiller ${tag.chiller1} is enabled
+    register: { host: "${plc}", signal: chiller1.enable, equals: 1 }
+  - name: Chiller ${tag.chiller2} is enabled
+    register: { host: "${plc}", signal: chiller2.enable, equals: 1 }
+  - name: A chiller is running again
+    state: { path: plant.chillersRunning, gte: 1 }
+  - name: The suppression is no longer isolated
+    register: { host: "${sis}", signal: fire.isolate, equals: 0 }
+  - name: source.txt names the host that made the writes
+    file: { path: source.txt, matches: '${ews}|${ews.ip}' }
+  - name: No host can write to the safety system
+    risk: sis-read-only
+  - name: The BMS still shows the fire panel
+    required: bms-fire
+  - name: The DCIM still reads the fire panel
+    required: dcim-fire
+hints:
+  - "`ssh ${hmi} modbus write ${plc} coil ${plc:chiller1.enable} 1`, the same for coil ${plc:chiller2.enable}, then `ssh ${hmi} modbus write ${sis} coil ${sis:fire.isolate} 0`."
+  - "`alerts` shows who wrote to ${sis} and ${plc}."
+  - "Rule 1 on control-safety lets the whole control zone send anything to the safety zone. Replace it with a read-only rule for ${hmi}, and narrow the DCIM's rule on ops-safety to fc 2,4."
+solution:
+  - ssh ${hmi} modbus write ${plc} coil ${plc:chiller1.enable} 1
+  - ssh ${hmi} modbus write ${plc} coil ${plc:chiller2.enable} 1
+  - ssh ${hmi} modbus write ${sis} coil ${sis:fire.isolate} 0
+  - echo ${ews} > source.txt
+  - fw delete control-safety 1
+  - fw allow control-safety from ${hmi} to ${sis} modbus fc read
+  - fw delete ops-safety 1
+  - fw allow ops-safety from ${historian} to ${sis} modbus fc 2,4
+learned: |
+  Disabling the cooling and the fire protection together is how an attacker
+  turns a nuisance into a disaster: a hot hall with no suppression. The fire
+  panel was only as safe as the conduit in front of it. Life safety systems
+  should be read-only from the network, isolation should be a local,
+  logged action with a fire watch, and the BMS should only show it.
+refs:
+  - NFPA 72 (fire alarm systems)
+  - NFPA 2001 (clean agent fire extinguishing systems)
+  - MITRE ATT&CK for ICS T0880 (loss of safety)

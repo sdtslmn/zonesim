@@ -1,0 +1,76 @@
+id: g11-full-design
+site: gas-compressor-station
+title: Segment the whole station from scratch
+level: scenario
+minutes: 25
+topic: Zones and conduits
+intro: |
+  Final challenge for this station. Starting from the flat network as found,
+  design the zones and conduits for the whole station, including the WAN
+  link to the control centre and the compressor maker's access. The station
+  must keep running and the design review must pass every check.
+
+  No step-by-step help this time. `report` tells you where you stand, and
+  `test` checks a single flow before you rely on it.
+tasks:
+  - Run `report`. Every data flow works and most security checks fail.
+  - Design zones for the office, the DMZ, operations, control and safety, and give the control centre's zone a target level.
+  - Add conduits with least-privilege rules, and filter Modbus function codes where it matters, across the WAN too.
+  - Route the compressor maker's logins through ${jump}, with MFA.
+  - Finish when `report` shows every data flow and every security check passing, the safety zone has SL-T 3 or more, and the control centre cannot write to the flow computer.
+checks:
+  - name: Every station data flow works
+    required: all
+  - name: Every security check in the report passes
+    risk: all
+  - name: The safety zone has SL-T 3 or more
+    zone: { host: "${sis}", slAtLeast: 3 }
+  - name: The control centre cannot write to the flow computer
+    flow: { from: "${control-centre}", to: "${meter}", service: modbus, fc: 6, expect: blocked }
+hints:
+  - "Start with the zones from lab G05, then conduits as in G06 with the filters from G07, and remote access as in G08."
+  - "Deleting the flat zone ${plc.zone} also removes the old edge and WAN conduits, with their broad rules."
+  - "`report` shows the first problem for each failing check, and `test SRC DST SERVICE [fc N]` checks one flow."
+solution:
+  - zone create enterprise --sl 1
+  - zone create dmz --sl 2
+  - zone create operations --sl 2
+  - zone create control --sl 3
+  - zone create safety --sl 3
+  - zone set ${control-centre.zone} --sl 2
+  - zone add enterprise ${office}
+  - zone add dmz ${report-server} ${jump}
+  - zone add operations ${historian}
+  - zone add control ${hmi} ${ews} ${plc} ${meter}
+  - zone add safety ${sis}
+  - zone delete ${plc.zone}
+  - conduit create ops-control operations control
+  - fw allow ops-control from ${historian} to ${plc} modbus fc 3,4
+  - fw allow ops-control from ${historian} to ${meter} modbus fc 3,4
+  - conduit create ops-safety operations safety
+  - fw allow ops-safety from ${historian} to ${sis} modbus fc 2,4
+  - conduit create control-safety control safety
+  - fw allow control-safety from ${hmi} to ${sis} modbus fc read
+  - conduit create wan-control ${control-centre.zone} control
+  - fw allow wan-control from ${control-centre} to ${plc} modbus fc 3,4,5,6
+  - fw allow wan-control from ${control-centre} to ${meter} modbus fc 3,4
+  - conduit create ops-dmz operations dmz
+  - fw allow ops-dmz from ${historian} to ${report-server} https
+  - conduit create ent-dmz enterprise dmz
+  - fw allow ent-dmz from ${office} to ${report-server} https
+  - conduit create inet-dmz ${vendor.zone} dmz
+  - fw allow inet-dmz from ${vendor} to ${report-server} https
+  - fw allow inet-dmz from ${vendor} to ${jump} rdp
+  - conduit create dmz-control dmz control
+  - fw allow dmz-control from ${jump} to ${ews} rdp
+  - host config ${jump} mfa=on
+learned: |
+  That is a complete design for a pipeline station: an office that only
+  reaches the DMZ, a DMZ that brokers reports and remote access, a historian
+  that reads but cannot write, a WAN conduit that lets the control centre run
+  the station but not recalibrate it, and an ESD system nobody can write to.
+  In a real project the design comes out of a risk assessment and is
+  reviewed with the control centre and the machine maker.
+refs:
+  - IEC 62443-3-2 (security risk assessment for system design)
+  - API 1164 (pipeline control systems cybersecurity)

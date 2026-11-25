@@ -1,0 +1,83 @@
+id: d06-conduits
+site: data-centre-cooling
+title: Connect the zones with conduits
+level: intermediate
+minutes: 15
+topic: Conduits
+intro: |
+  The zones are in place and the facility is half blind: the DCIM records
+  nothing, the BMS has lost the fire panel and the power meter, and the
+  customer portal is empty. Add conduits with firewall rules for exactly the
+  flows the facility needs. A new conduit denies everything.
+
+  `plant` and `report` list each blocked flow and the reason.
+setup:
+  - zone create enterprise --sl 1
+  - zone create dmz --sl 2
+  - zone create operations --sl 2
+  - zone create control --sl 3
+  - zone create power --sl 2
+  - zone create safety --sl 3
+  - zone add enterprise ${office}
+  - zone add dmz ${report-server} ${jump}
+  - zone add operations ${historian}
+  - zone add control ${hmi} ${ews} ${plc}
+  - zone add power ${meter}
+  - zone add safety ${sis}
+  - zone delete ${plc.zone}
+tasks:
+  - Run `plant` to see which data flows are blocked.
+  - "Create a conduit for each pair of zones that must talk, for example `conduit create ops-control operations control`."
+  - "Add an allow rule for each flow, for example `fw allow ops-control from ${historian} to ${plc} modbus`."
+  - Bring back every data flow except the chiller vendor's remote login (that is lab D08). Customers read the portal ${report-server} from the internet.
+  - Keep the office away from the controllers. ${office} must not reach ${plc} or ${historian}.
+checks:
+  - name: The DCIM reads ${plc}
+    required: dcim-plc
+  - name: The DCIM reads the power meter
+    required: dcim-power
+  - name: The DCIM reads the fire panel
+    required: dcim-fire
+  - name: The BMS shows the fire panel status
+    required: bms-fire
+  - name: The BMS shows IT load and PUE
+    required: bms-power
+  - name: The DCIM copies data to the portal
+    required: dcim-portal
+  - name: Customers read the portal
+    required: customer-portal
+  - name: Office reports work from the portal
+    required: office-reports
+  - name: ${office} cannot reach ${plc}
+    flow: { from: "${office}", to: "${plc}", service: modbus, expect: blocked }
+  - name: ${office} cannot reach ${historian}
+    flow: { from: "${office}", to: "${historian}", service: https, expect: blocked }
+hints:
+  - "The DCIM talks to four zones: control (${plc}), power (${meter}), safety (${sis}) and dmz (${report-server}). The BMS talks to power and safety."
+  - "Customers are in ${vendor.zone}: `conduit create inet-dmz ${vendor.zone} dmz`, then `fw allow inet-dmz from ${customer} to ${report-server} https`."
+  - "Office reports: ${office} reads ${report-server}, so connect enterprise to dmz, never enterprise to operations."
+solution:
+  - conduit create ops-control operations control
+  - fw allow ops-control from ${historian} to ${plc} modbus
+  - conduit create ops-power operations power
+  - fw allow ops-power from ${historian} to ${meter} modbus
+  - conduit create ops-safety operations safety
+  - fw allow ops-safety from ${historian} to ${sis} modbus
+  - conduit create control-power control power
+  - fw allow control-power from ${hmi} to ${meter} modbus
+  - conduit create control-safety control safety
+  - fw allow control-safety from ${hmi} to ${sis} modbus
+  - conduit create ops-dmz operations dmz
+  - fw allow ops-dmz from ${historian} to ${report-server} https
+  - conduit create ent-dmz enterprise dmz
+  - fw allow ent-dmz from ${office} to ${report-server} https
+  - conduit create inet-dmz ${vendor.zone} dmz
+  - fw allow inet-dmz from ${customer} to ${report-server} https
+learned: |
+  Every conduit now carries named flows from named hosts. But the DCIM may
+  send any Modbus request to the chiller plant controller, and the BMS may
+  send any request to the fire panel, including the coil that releases the
+  agent. The next lab narrows that with function code filtering.
+refs:
+  - IEC 62443-3-2 ZCR 3 (partition into zones and conduits)
+  - IEC 62443-3-3 SR 5.2 RE 1 (deny by default, allow by exception)

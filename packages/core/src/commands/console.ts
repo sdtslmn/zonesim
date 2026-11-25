@@ -97,31 +97,28 @@ const hostCmd: CommandFn = (args, { io, sim }) => {
 
 // ---------------------------------------------------------------- plant and hmi
 
+const paint = (state: string, text: string) => (state === "bad" ? C.red(text) : state === "warn" ? C.yellow(text) : state === "ok" ? C.green(text) : text);
+
 const plant: CommandFn = (args, { io, sim }) => {
   if (wantsHelp(args)) {
     io.stdout("plant    process values, alarms, and whether the data flows the plant needs still work\n");
     return 0;
   }
-  const p = sim.tank;
   const flows = sim.requiredFlows();
   const okCount = flows.filter((f) => f.ok).length;
   const alarms = sim.plant.alarms();
   const out: string[] = [];
+  const pad = (s: string) => `  ${s}`.padEnd(29);
   out.push(`${C.bold(sim.site.name)}   plant time ${clock(sim.t)}`);
-  if (p) {
-    const t = p.tags;
-    const pump = p.pumpRunning ? C.green("running") : "stopped";
-    out.push(`  Tank ${t.tank} level`.padEnd(23) + `${p.level.toFixed(1).padStart(5)} %  ${bar(p.level)}  start ${p.startSp / 10} %, stop ${p.stopSp / 10} %`);
-    out.push(`  Inlet pump ${t.pump}`.padEnd(23) + `${pump} (${p.autoMode ? "auto" : C.yellow("manual")})`);
-    out.push(`  Chlorine residual    ${p.chlorine.toFixed(2)} mg/L, setpoint ${(p.chlorineSp / 100).toFixed(2)}, dosing ${p.dosingRunning ? "on" : C.red("off")}`);
-    const sis = sim.site.ids.safety[0];
-    out.push(`  Safety system${sis ? ` ${sis}` : ""}`.padEnd(23) + `${p.bypassed ? C.red("BYPASSED") : p.sisTrip ? C.yellow("TRIPPED") : C.green("armed")}, trips at ${p.tripSp / 10} %`);
-    if (p.overflowSeconds > 0) out.push(`  Overflow             ${C.red(`${Math.round(p.overflowSeconds)} s of spillage so far`)}`);
+  for (const r of sim.readouts()) {
+    const value = r.bar !== undefined ? `${paint(r.state, r.text.padEnd(10))} ${bar(r.bar)}` : paint(r.state, r.text);
+    out.push(pad(r.label) + value + (r.note ? `  ${C.gray(r.note)}` : ""));
   }
+  for (const n of sim.plant.notes()) out.push(`  ${C.red(n)}`);
   const hmiHost = sim.site.hmi;
-  if (hmiHost) out.push(`  HMI ${hmiHost.host}`.padEnd(23) + `${sim.hmiOnline ? C.green("online") : C.red(`COMM FAIL: no data from ${hmiHost.device}`)}`);
-  out.push(`  Alarms               ${alarms.length ? alarms.map((a) => (a.severity === "critical" || a.severity === "high" ? C.red(a.text) : C.yellow(a.text))).join("; ") : C.green("none")}`);
-  out.push(`  Data flows           ${okCount === flows.length ? C.green(`${okCount}/${flows.length} working`) : C.red(`${okCount}/${flows.length} working`)}`);
+  if (hmiHost) out.push(pad(`HMI ${hmiHost.host}`) + `${sim.hmiOnline ? C.green("online") : C.red(`COMM FAIL: no data from ${hmiHost.device}`)}`);
+  out.push(pad("Alarms") + `${alarms.length ? alarms.map((a) => (a.severity === "critical" || a.severity === "high" ? C.red(a.text) : C.yellow(a.text))).join("; ") : C.green("none")}`);
+  out.push(pad("Data flows") + `${okCount === flows.length ? C.green(`${okCount}/${flows.length} working`) : C.red(`${okCount}/${flows.length} working`)}`);
   for (const f of flows.filter((x) => !x.ok)) out.push(`    ${C.red("✘")} ${f.flow.title}\n      ${C.gray(f.reason)}`);
   io.stdout(out.join("\n") + "\n");
   return 0;
@@ -137,26 +134,17 @@ const hmi: CommandFn = (args, { io, sim }) => {
     io.stdout("This site has no HMI defined.\n");
     return 0;
   }
-  const v = sim.hmiView;
-  const tags = sim.plant.tags;
   const online = sim.hmiOnline;
-  const W = 52;
+  const W = 64;
   const row = (s: string) => `│ ${s}${" ".repeat(Math.max(0, W - 2 - s.replace(/\x1b\[[0-9;]*m/g, "").length))} │`;
-  const dot = (on: boolean) => (on ? C.green("●") : C.gray("○"));
   const title = `${h.host}  ${sim.site.name}`.slice(0, W - 2);
-  const lines = [
-    `┌${"─".repeat(W)}┐`,
-    row(C.bold(title)),
-    row(""),
-    row(`${(tags.tank ?? "Tank").padEnd(6)} ${bar(v.level, 20)}  ${v.level.toFixed(1)} %`),
-    row(`${tags.pump ?? "Pump"} inlet pump`.padEnd(20) + `${dot(v.pump)} ${v.pump ? "RUN" : "STOP"}    Mode ${v.auto ? "AUTO" : C.yellow("MANUAL")}`),
-    row(`${tags.dosing ?? "Dosing"} dosing pump`.padEnd(20) + `${dot(v.dosing)} ${v.dosing ? "ON" : C.red("OFF")}`),
-    row(`Chlorine            ${v.chlorine.toFixed(2)} mg/L`),
-    row(`Safety system       ${v.bypass ? C.red("BYPASSED") : v.sisTrip ? C.yellow("TRIPPED") : C.green("ARMED")}`),
-    row(""),
-    row(online ? C.green("COMM OK") : C.red(`COMM FAIL  values are ${Math.round(sim.t - (sim.hmiLast[h.device] ?? 0))} s old`)),
-    `└${"─".repeat(W)}┘`,
-  ];
+  const lines = [`┌${"─".repeat(W)}┐`, row(C.bold(title)), row("")];
+  for (const r of sim.hmiReadouts()) {
+    const label = r.label.length > 27 ? r.label.slice(0, 26) + "…" : r.label;
+    const value = r.bar !== undefined ? `${bar(r.bar, 16)} ${r.text}` : paint(r.state, r.text);
+    lines.push(row(`${label.padEnd(28)}${value}`));
+  }
+  lines.push(row(""), row(online ? C.green("COMM OK") : C.red(`COMM FAIL  values are ${Math.round(sim.t - (sim.hmiLast[h.device] ?? 0))} s old`)), `└${"─".repeat(W)}┘`);
   io.stdout(lines.join("\n") + "\n");
   return 0;
 };

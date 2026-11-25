@@ -11,8 +11,12 @@
   checked against the chosen site and falls back to its own site when it does
   not fit
 - A JSON Schema for site files, for completion and checks in editors
-- A second built-in site, `riverside-segmented`: the same plant with the
-  finished zone and conduit design, as a reference
+- Two new plants, each with 11 labs: Kestrel compressor station (gas
+  pipeline: anti-surge, ESD, relief valve, fiscal flow computer, a control
+  centre over a WAN) and Harbour data centre (N+1 chillers, CRAH units, IT
+  load and PUE, a fire suppression panel, a customer portal)
+- A reference site, `riverside-segmented`: Riverside with the finished zone
+  and conduit design
 - New layout: Labs, Help and Site on the left, map and plant on the top
   right, and the terminal docked at the bottom (resizable, foldable); stacked
   panels on phones
@@ -41,7 +45,7 @@
 ZoneSim stays a standalone project with no dependencies on other simulator
 repos.
 
-- More built-in sites and process models (a pumping station, a substation)
+- More plants: an electrical substation (with DNP3 or IEC 61850) and a wastewater pumping station
 - DNP3 next to Modbus, and a second site connected over a WAN
 - More scenarios: ransomware spreading from the office, an insider on the
   engineering workstation, a rogue device in the control zone

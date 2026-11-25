@@ -1,0 +1,42 @@
+id: d01-hall-tour
+site: data-centre-cooling
+title: Get to know the data hall
+level: beginner
+minutes: 8
+topic: Asset inventory
+intro: |
+  You have just joined ${site.name} as the OT security engineer for the
+  facility systems: cooling, power monitoring and fire protection for
+  ${tag.hall}, which carries ${param.itLoad} kW of customer servers. Before
+  you change anything, find out what is there.
+
+  You are on the console, an out-of-band management station. It sends no
+  traffic on the facility network. To act from a host, log in to it with ssh,
+  or run one command there with `ssh HOST COMMAND`.
+tasks:
+  - Run `hosts`. Which three hosts are controllers? Which hosts sit on the internet?
+  - Run `plant` and `hmi` to see the cooling, the IT load, the fire panel and what the BMS operator sees.
+  - "Ask the chiller plant controller for its vendor, model and firmware from the engineering workstation: `ssh ${ews} modbus info ${plc}`."
+  - Write the chiller plant controller's firmware version into firmware.txt.
+  - Write the IP address of the fire alarm and suppression panel ${sis} into fire-ip.txt.
+checks:
+  - name: firmware.txt holds the chiller plant controller's firmware version
+    file: { path: firmware.txt, matches: '${plc.firmware}' }
+  - name: fire-ip.txt holds the IP address of ${sis}
+    file: { path: fire-ip.txt, matches: '${sis.ip}' }
+hints:
+  - "`hosts -o wide` adds each host's role and operating system. Customers and the chiller vendor are outside."
+  - "`modbus info ${plc}` reads the device identification (function code 43). Look for MajorMinorRevision."
+  - "`echo ${plc.firmware} > firmware.txt` writes a file, `cat firmware.txt` shows it."
+solution:
+  - ssh ${ews} modbus info ${plc}
+  - echo ${plc.firmware} > firmware.txt
+  - echo ${sis.ip} > fire-ip.txt
+learned: |
+  A data centre's facility systems are an OT network in their own right,
+  often run by a different team from the IT inside the hall. The fire panel
+  is life safety equipment, and colocation customers reach in from the
+  internet to see their dashboards. All of it belongs in the inventory.
+refs:
+  - IEC 62443-2-1 (asset inventory)
+  - ANSI/TIA-942 (data center infrastructure)

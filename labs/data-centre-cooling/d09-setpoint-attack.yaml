@@ -1,0 +1,66 @@
+id: d09-setpoint-attack
+site: data-centre-cooling
+title: The hall is running hot
+level: advanced
+minutes: 15
+topic: Incident response
+intro: |
+  Sunday, 03:20. The DCIM shows the cold aisle in ${tag.hall} above the
+  allowable range, and customers are opening tickets about throttling
+  servers. Both chillers are fine and the pumps run. The IDS raised alerts
+  overnight. The network is still flat.
+
+  Find out what changed, put it right, and stop it from happening again
+  without cutting the BMS off.
+setup:
+  - ssh ${office} nmap -p 502 ${plc.net}
+  - ssh ${office} modbus info ${plc}
+  - ssh ${office} modbus write ${plc} hr ${plc:setpoint.chw} 250
+  - ssh ${office} modbus write ${plc} hr ${plc:setpoint.supply_air} 300
+settle: 300
+tasks:
+  - Run `plant` and read the setpoints. The normal values are ${param.chwSetpoint} °C chilled water and ${param.supplyAirSetpoint} °C supply air.
+  - Read the alerts. Which host changed the setpoints? Write its name into attacker.txt.
+  - From ${hmi}, restore both setpoints (raw ${param.chwSetpoint*10} and ${param.supplyAirSetpoint*10}).
+  - "Contain it: that host must no longer reach ${plc} over Modbus, while every facility data flow keeps working."
+  - Run `wait 300` and check that the cold aisle is back within the recommended range.
+  - Acknowledge the alerts once they are handled.
+checks:
+  - name: attacker.txt names the source of the writes
+    file: { path: attacker.txt, matches: '${office}|${office.ip}' }
+  - name: The chilled water setpoint is back to ${param.chwSetpoint} °C
+    register: { host: "${plc}", signal: setpoint.chw, equals: "${param.chwSetpoint*10}" }
+  - name: The supply air setpoint is back to ${param.supplyAirSetpoint} °C
+    register: { host: "${plc}", signal: setpoint.supply_air, equals: "${param.supplyAirSetpoint*10}" }
+  - name: The cold aisle is back within the recommended range
+    state: { path: plant.coldAisle, lte: "${param.recommendedMax}" }
+  - name: The source host can no longer write to ${plc}
+    flow: { from: "${office}", to: "${plc}", service: modbus, fc: 6, expect: blocked }
+  - name: Every facility data flow still works
+    required: all
+  - name: The alert for the writes is acknowledged
+    alert: { title: Unauthorized Modbus write, src: "${office}", acked: true }
+hints:
+  - "`plant` shows each setpoint next to its temperature. `alerts show ID` gives the source IP, and `hosts | grep ${office.ip}` turns it into a name."
+  - "`ssh ${hmi} modbus write ${plc} hr ${plc:setpoint.chw} ${param.chwSetpoint*10}` and `ssh ${hmi} modbus write ${plc} hr ${plc:setpoint.supply_air} ${param.supplyAirSetpoint*10}`."
+  - "Put ${office} in a zone of its own, then connect it to ${plc.zone} with one rule: ${office} to ${report-server} https."
+solution:
+  - alerts
+  - echo ${office} > attacker.txt
+  - ssh ${hmi} modbus write ${plc} hr ${plc:setpoint.chw} ${param.chwSetpoint*10}
+  - ssh ${hmi} modbus write ${plc} hr ${plc:setpoint.supply_air} ${param.supplyAirSetpoint*10}
+  - zone create enterprise --sl 1
+  - zone add enterprise ${office}
+  - conduit create ent-site enterprise ${plc.zone}
+  - fw allow ent-site from ${office} to ${report-server} https
+  - wait 300
+  - alerts ack all
+learned: |
+  Nothing was switched off: two setpoints were moved, and the plant did
+  exactly what it was told. Attacks like this look like a tuning mistake,
+  which is why the IDS alert on a write from an unexpected host matters.
+  Restore from a trusted station, contain the source, and confirm the
+  process recovered before closing the incident.
+refs:
+  - NIST SP 800-61 (incident handling)
+  - MITRE ATT&CK for ICS T0836 (modify parameter)

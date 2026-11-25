@@ -1,9 +1,19 @@
 # Getting started
 
-ZoneSim is a training simulator for OT and ICS security. It runs a small
-plant in your browser: a tank, pumps, a PLC, a safety system, an HMI, a
-historian and an office network. You segment it into zones and conduits,
-filter Modbus, and handle alerts, and the labs check your work.
+ZoneSim is a training simulator for OT and ICS security. It runs a plant in
+your browser, with controllers, a safety system, an HMI, a historian and an
+office network, and a live process behind them. You segment it into zones
+and conduits, filter Modbus, and handle alerts, and the labs check your work.
+
+There are three plants, each with its own labs:
+
+- **Riverside water treatment plant**: a tank, pumps, chlorine dosing and a
+  safety trip on high level.
+- **Kestrel compressor station**: a gas pipeline compressor with anti-surge
+  protection, an emergency shutdown system, a flow computer, and a control
+  centre that runs it over a WAN.
+- **Harbour data centre**: chillers, pumps and CRAH units cooling a data
+  hall, a power meter, and the fire suppression panel.
 
 Nothing leaves your browser and nothing real is touched.
 
@@ -22,7 +32,7 @@ On a phone the panels stack, with a tab bar at the top.
 
 ## Your first five minutes
 
-1. Open lab 1 on the left. Read the intro and the tasks.
+1. Open lab 1 of a plant on the left. Read the intro and the tasks.
 2. Click in the terminal and type `hosts`. Press Enter.
 3. Type `plant`, then `hmi`. You now know what is on the network and what
    the plant is doing.
@@ -60,9 +70,11 @@ Clearing the site data of this page removes both.
 
 ## Flat at the start
 
-Every session starts from the plant as found: one flat network, where the
-office PC can reach the PLC. That is the problem the labs solve. To see what
-a finished design looks like, pick **Riverside, segmented** in the Site tab.
+Every plant starts as found: one flat network, where the office PC can
+reach the controllers. That is the problem the labs solve. To see what a
+finished design looks like, pick **Riverside, segmented** in the Site tab.
+To look around another plant without a lab, click **Explore this plant** in
+the Labs tab.
 
 ## Next
 

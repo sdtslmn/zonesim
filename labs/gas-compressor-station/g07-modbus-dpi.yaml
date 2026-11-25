@@ -1,0 +1,96 @@
+id: g07-modbus-dpi
+site: gas-compressor-station
+title: Filter Modbus across the WAN
+level: intermediate
+minutes: 14
+topic: Deep packet inspection
+intro: |
+  Your conduits allow Modbus, and plain Modbus is all or nothing. The
+  historian only needs to read. The control centre needs to read the
+  station, start and stop the compressor (function code 5) and change
+  setpoints (function code 6), but it has no business writing to the flow
+  computer or reprogramming anything. Nobody should write to the ESD system
+  over the network.
+
+  Reads are function codes 1, 2, 3, 4 and 43. Writes are 5, 6, 15 and 16.
+setup:
+  - zone create enterprise --sl 1
+  - zone create dmz --sl 2
+  - zone create operations --sl 2
+  - zone create control --sl 3
+  - zone create safety --sl 3
+  - zone set ${control-centre.zone} --sl 2
+  - zone add enterprise ${office}
+  - zone add dmz ${report-server} ${jump}
+  - zone add operations ${historian}
+  - zone add control ${hmi} ${ews} ${plc} ${meter}
+  - zone add safety ${sis}
+  - zone delete ${plc.zone}
+  - conduit create ops-control operations control
+  - fw allow ops-control from ${historian} to ${plc} modbus
+  - fw allow ops-control from ${historian} to ${meter} modbus
+  - conduit create ops-safety operations safety
+  - fw allow ops-safety from ${historian} to ${sis} modbus
+  - conduit create control-safety control safety
+  - fw allow control-safety from ${hmi} to ${sis} modbus
+  - conduit create wan-control ${control-centre.zone} control
+  - fw allow wan-control from ${control-centre} to ${plc} modbus
+  - fw allow wan-control from ${control-centre} to ${meter} modbus
+  - conduit create ops-dmz operations dmz
+  - fw allow ops-dmz from ${historian} to ${report-server} https
+  - conduit create ent-dmz enterprise dmz
+  - fw allow ent-dmz from ${office} to ${report-server} https
+  - conduit create inet-dmz ${vendor.zone} dmz
+  - fw allow inet-dmz from ${vendor} to ${report-server} https
+tasks:
+  - "See the problem: `test ${control-centre} ${meter} modbus fc 6`. That is a new meter factor from 300 km away."
+  - Limit the historian to function codes 3 and 4 towards ${plc} and ${meter}, and 2 and 4 towards ${sis}. Limit ${hmi} to reads on ${sis}.
+  - Limit the control centre to function codes 3, 4, 5 and 6 on ${plc}, and to reads (3 and 4) on ${meter}.
+  - "Prove it: from the control centre, try `modbus write ${meter} hr ${meter:meter.factor} 10500`. It should time out. Then find it in `fw log`."
+checks:
+  - name: The control centre cannot write to the flow computer
+    flow: { from: "${control-centre}", to: "${meter}", service: modbus, fc: 6, expect: blocked }
+  - name: The control centre cannot send multiple-register writes to ${plc}
+    flow: { from: "${control-centre}", to: "${plc}", service: modbus, fc: 16, expect: blocked }
+  - name: The control centre still runs the station
+    required: occ-plc
+  - name: The control centre still reads the flow computer
+    required: occ-meter
+  - name: The historian still reads everything it records
+    required: historian-meter
+  - name: The HMI still reads ${sis}
+    required: hmi-sis
+  - name: No host can write to the safety system
+    risk: sis-read-only
+  - name: The historian can only read
+    risk: historian-read-only
+  - name: You tried the meter write from the control centre and the firewall blocked it
+    command: fw log
+    outputMatches: '${control-centre}\s+${meter}\s+modbus fc (5|6|15|16)'
+hints:
+  - "`fw list wan-control` shows the rule numbers. Delete both rules (`fw delete wan-control 1` twice), then add narrow ones."
+  - "`fw allow wan-control from ${control-centre} to ${plc} modbus fc 3,4,5,6` and `fw allow wan-control from ${control-centre} to ${meter} modbus fc 3,4`."
+  - "`fc read` is shorthand for 1,2,3,4,43. `ssh ${control-centre} modbus write ${meter} hr ${meter:meter.factor} 10500` should then time out."
+solution:
+  - fw delete ops-control 1
+  - fw delete ops-control 1
+  - fw allow ops-control from ${historian} to ${plc} modbus fc 3,4
+  - fw allow ops-control from ${historian} to ${meter} modbus fc 3,4
+  - fw delete ops-safety 1
+  - fw allow ops-safety from ${historian} to ${sis} modbus fc 2,4
+  - fw delete control-safety 1
+  - fw allow control-safety from ${hmi} to ${sis} modbus fc read
+  - fw delete wan-control 1
+  - fw delete wan-control 1
+  - fw allow wan-control from ${control-centre} to ${plc} modbus fc 3,4,5,6
+  - fw allow wan-control from ${control-centre} to ${meter} modbus fc 3,4
+  - "ssh ${control-centre} modbus write ${meter} hr ${meter:meter.factor} 10500   # times out, as it should"
+learned: |
+  Function code filtering cannot tell a good setpoint from a bad one, but it
+  removes whole classes of harm: the control centre can still run the
+  station, yet a compromised control centre can no longer recalibrate the
+  meter or push multi-register writes. Industrial firewalls can go further
+  and filter by register address.
+refs:
+  - IEC 62443-3-3 SR 5.2 (zone boundary protection)
+  - API 1164 (pipeline control systems cybersecurity)

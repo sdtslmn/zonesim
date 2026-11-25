@@ -224,14 +224,14 @@ const curl: CommandFn = (args, { io, sim, host }) => {
     io.stderr(`curl: (7) Failed to connect to ${dst.name} port ${SERVICES[scheme].port}: Connection refused\n`);
     return 7;
   }
-  const level = (sim.plant.get("level") / 10).toFixed(1);
-  const chlorine = (sim.plant.get("chlorine") / 100).toFixed(2);
-  const tags = sim.plant.tags;
+  const values = sim.readouts().filter((r) => r.strip);
+  const summary = values.map((r) => `${r.label} ${r.text}`).join(", ");
+  const json = Object.fromEntries(values.map((r) => [r.id, r.text]));
   const dev = sim.device(dst.name);
   const byRole: Record<string, string> = {
-    hmi: `${sim.site.name} operator HMI\n${tags.tank ?? "Tank"} level ${level} %, ${tags.pump ?? "pump"} ${sim.plant.get("pump.running") ? "RUN" : "STOP"}, chlorine ${chlorine} mg/L\nLog in to operate.\n`,
-    historian: `{"source":"${dst.name}","tank_level_pct":${level},"chlorine_mg_l":${chlorine},"points":512}\n`,
-    "report-server": `Production report (copy in the DMZ)\n${tags.tank ?? "Tank"} level ${level} %, chlorine ${chlorine} mg/L\nThis copy is read-only and refreshed from the historian.\n`,
+    hmi: `${sim.site.name} operator HMI\n${summary}\nLog in to operate.\n`,
+    historian: `${JSON.stringify({ source: dst.name, ...json, points: 512 })}\n`,
+    "report-server": `Production report (copy in the DMZ)\n${summary}\nThis copy is read-only and refreshed from the historian.\n`,
   };
   const body = dev ? `${dev.def.product} web server, firmware ${dev.def.revision}\nConfiguration login: admin / admin (default password still set)\n` : byRole[dst.role ?? ""];
   io.stdout(body ?? "OK\n");

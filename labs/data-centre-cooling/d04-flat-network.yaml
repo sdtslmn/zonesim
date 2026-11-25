@@ -1,0 +1,50 @@
+id: d04-flat-network
+site: data-centre-cooling
+title: Stopping the pumps from the office
+level: beginner
+minutes: 12
+topic: Attack and detection
+intro: |
+  The facilities office PC ${office} sits on the same flat network as the
+  chiller plant controller. Play an attacker on it: find the controllers,
+  then stop the chilled water pumps. Without chilled water the CRAH units
+  cannot cool, and the hall warms by about ${param.warmingRate} °C a minute.
+
+  Watch what happens, then put the hall right. This is a simulated plant,
+  so go ahead.
+tasks:
+  - "From ${office}, find the controllers: `ssh ${office} nmap ${plc.net}`."
+  - From ${office}, stop the chilled water pumps by writing 0 to ${plc} coil ${plc:pump.run}.
+  - Run `wait 120`, then `plant`. The chillers stopped too (no flow), and the cold aisle is out of the recommended range.
+  - On the console, run `alerts` and open the alert about the write with `alerts show ID`.
+  - From ${hmi}, start the pumps again (coil ${plc:pump.run} = 1), then `wait 120` for the hall to cool down.
+  - Acknowledge the alerts once you have read them.
+checks:
+  - name: The IDS noticed the scan from ${office}
+    alert: { title: Network scan, src: "${office}" }
+  - name: The chilled water pumps run again
+    register: { host: "${plc}", signal: pump.run, equals: 1 }
+  - name: The cold aisle is back within the recommended range
+    state: { path: plant.coldAisle, lte: "${param.recommendedMax}" }
+  - name: The alert for ${office}'s write is acknowledged
+    alert: { title: Unauthorized Modbus write, src: "${office}", acked: true }
+hints:
+  - "`ssh ${office} modbus write ${plc} coil ${plc:pump.run} 0` stops the pumps."
+  - "`ssh ${hmi} modbus write ${plc} coil ${plc:pump.run} 1` starts them again."
+  - "`alerts ack all` acknowledges every alert."
+solution:
+  - ssh ${office} nmap ${plc.net}
+  - ssh ${office} modbus write ${plc} coil ${plc:pump.run} 0
+  - wait 120
+  - ssh ${hmi} modbus write ${plc} coil ${plc:pump.run} 1
+  - wait 120
+  - alerts ack all
+learned: |
+  One write from an office PC took away all cooling from a hall full of
+  customer servers. Left alone a few minutes longer, the servers would have
+  shut themselves down. N+1 chillers do not help when the attacker stops the
+  pumps they share. The IDS saw it, but detection is not prevention: that
+  takes zones and conduits.
+refs:
+  - Uptime Institute Tier Standard (concurrent maintainability, fault tolerance)
+  - MITRE ATT&CK for ICS T0855 (unauthorized command message)

@@ -1,0 +1,65 @@
+id: g05-zones
+site: gas-compressor-station
+title: Group the station into zones
+level: intermediate
+minutes: 12
+topic: Zones
+intro: |
+  Group the station's hosts into zones by what they do and how much you
+  trust them, following the Purdue levels: office, DMZ, operations, control,
+  and a zone of its own for the emergency shutdown system. The control
+  centre already sits in a zone of its own, ${control-centre.zone}, on the far
+  side of the WAN.
+
+  Each zone gets a target security level (SL-T, 1 to 4) from the risk
+  assessment.
+tasks:
+  - "Create the zones: enterprise (SL-T 1), dmz (SL-T 2), operations (SL-T 2), control (SL-T 3) and safety (SL-T 3), for example `zone create control --sl 3`."
+  - "Give the control centre's zone a target too: `zone set ${control-centre.zone} --sl 2`."
+  - "Move the hosts: ${office} to enterprise; ${report-server} and ${jump} to dmz; ${historian} to operations; ${hmi}, ${ews}, ${plc} and the flow computer ${meter} to control; ${sis} to safety."
+  - Delete the flat station zone, ${plc.zone}, once it is empty.
+  - Run `plant`. Most data flows are blocked now, because nothing connects the zones yet. The next lab adds conduits.
+checks:
+  - name: ${office} is in an office zone without plant hosts
+    zone: { host: "${office}", notWith: ["${report-server}", "${historian}", "${hmi}", "${plc}", "${sis}", "${meter}"] }
+  - name: ${report-server} and ${jump} share a DMZ zone
+    zone: { host: "${report-server}", with: ["${jump}"], notWith: ["${office}", "${historian}", "${plc}"] }
+  - name: The historian has an operations zone of its own
+    zone: { host: "${historian}", notWith: ["${office}", "${report-server}", "${hmi}", "${plc}", "${sis}"] }
+  - name: ${hmi}, ${ews}, ${plc} and ${meter} share a control zone with SL-T 3 or more
+    zone: { host: "${plc}", with: ["${hmi}", "${ews}", "${meter}"], notWith: ["${historian}", "${sis}"], slAtLeast: 3 }
+  - name: ${sis} is alone in the safety zone, with SL-T 3 or more
+    zone: { host: "${sis}", alone: true, slAtLeast: 3 }
+  - name: The control centre stays in its own zone
+    zone: { host: "${control-centre}", alone: true }
+  - name: The flat zone ${plc.zone} is gone
+    command: zone list
+    outputNotMatches: '^${plc.zone}\b'
+  - name: Office, DMZ and plant hosts are in separate zones
+    risk: segmented
+hints:
+  - "`zone create enterprise --sl 1`, then `zone add enterprise ${office}`."
+  - "`zone add` takes several hosts at once: `zone add control ${hmi} ${ews} ${plc} ${meter}`."
+  - "`zone delete ${plc.zone}` works once the zone is empty. Deleting it also removes the old conduits to it."
+solution:
+  - zone create enterprise --sl 1
+  - zone create dmz --sl 2
+  - zone create operations --sl 2
+  - zone create control --sl 3
+  - zone create safety --sl 3
+  - zone set ${control-centre.zone} --sl 2
+  - zone add enterprise ${office}
+  - zone add dmz ${report-server} ${jump}
+  - zone add operations ${historian}
+  - zone add control ${hmi} ${ews} ${plc} ${meter}
+  - zone add safety ${sis}
+  - zone delete ${plc.zone}
+learned: |
+  The control centre is a remote site of the same company, so it gets a zone
+  of its own and every byte across the WAN passes through a conduit. Some
+  operators also give fiscal metering its own zone, because the flow computer
+  decides what customers pay. The safety system is alone because a
+  compromise there could hurt people.
+refs:
+  - IEC 62443-3-2 ZCR 3 (partition into zones and conduits)
+  - API 1164 (pipeline control systems cybersecurity)

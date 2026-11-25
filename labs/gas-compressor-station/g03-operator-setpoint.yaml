@@ -1,0 +1,36 @@
+id: g03-operator-setpoint
+site: gas-compressor-station
+title: Lower the discharge pressure like an operator
+level: beginner
+minutes: 8
+topic: Modbus basics
+intro: |
+  Demand downstream is low, and the dispatcher asks you to lower the
+  discharge pressure by 3 bar, from ${param.setpoint} to ${param.setpoint-3}
+  bar, to save fuel. Operators do this from the HMI, which writes a holding
+  register with function code 6.
+tasks:
+  - From ${hmi}, set the discharge pressure setpoint (${plc} holding register ${plc:setpoint.discharge}) to ${param.setpoint-3} bar. The raw value is ${param.setpoint*10-30}.
+  - Read the register back to confirm the PLC took it.
+  - Run `wait 90`, then `plant`. The compressor slows down and the pressure follows the new setpoint, while the anti-surge valve keeps the margin.
+checks:
+  - name: The setpoint is ${param.setpoint-3} bar (hr ${plc:setpoint.discharge} = ${param.setpoint*10-30})
+    register: { host: "${plc}", signal: setpoint.discharge, equals: "${param.setpoint*10-30}" }
+  - name: The discharge pressure came down to the new setpoint
+    state: { path: plant.dischargePressure, lte: "${param.setpoint-2}" }
+  - name: The IDS raised no alert, because ${hmi} is an expected writer
+    alert: { title: Unauthorized, exists: false }
+hints:
+  - "`modbus write ${plc} hr ${plc:setpoint.discharge} ${param.setpoint*10-30}` sends function code 6."
+  - "Run it on the HMI host: `ssh ${hmi} modbus write ${plc} hr ${plc:setpoint.discharge} ${param.setpoint*10-30}`, then `wait 90`."
+solution:
+  - ssh ${hmi} modbus write ${plc} hr ${plc:setpoint.discharge} ${param.setpoint*10-30}
+  - ssh ${hmi} modbus read ${plc} hr ${plc:setpoint.discharge}
+  - wait 90
+learned: |
+  One function code 6 request changed how hard a multi-megawatt compressor
+  works. The PLC accepted it because the request was well formed; it cannot
+  tell who sent it. The IDS stayed quiet because ${hmi} normally writes to
+  ${plc}. The same request from any other host is an attack.
+refs:
+  - Modbus Application Protocol Specification v1.1b3

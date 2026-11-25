@@ -158,11 +158,13 @@ const sleep: CommandFn = async (args, { io }) => {
 const wait: CommandFn = (args, { io, sim }) => {
   const s = parseFloat(args[0] ?? "");
   if (!Number.isFinite(s) || s <= 0 || s > 3600) throw new UserError("usage: wait SECONDS  (fast-forwards the plant, up to 3600)");
-  const before = sim.plant.get("level") / 10;
+  const pick = () => sim.readouts().find((r) => r.id === sim.plant.headline);
+  const before = pick();
   const alertsBefore = sim.alerts.length;
   sim.settle(s);
-  const after = sim.plant.get("level") / 10;
-  io.stdout(`Fast-forwarded ${s} s of plant time (now ${clock(sim.t)}). Tank level ${before.toFixed(1)} % → ${after.toFixed(1)} %.\n`);
+  const after = pick();
+  const change = before && after ? ` ${after.label} ${before.text} → ${after.text}.` : "";
+  io.stdout(`Fast-forwarded ${s} s of plant time (now ${clock(sim.t)}).${change}\n`);
   const fresh = sim.alerts.length - alertsBefore;
   if (fresh > 0) io.stdout(`${C.yellow(`${fresh} new alert${fresh === 1 ? "" : "s"}.`)} Type ${C.cyan("alerts")} on the console to see them.\n`);
   return 0;

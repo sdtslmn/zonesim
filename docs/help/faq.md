@@ -36,11 +36,18 @@ The HMI polls its controller every few seconds. If your design blocks that
 flow, operators lose their view of the plant. `plant` shows the blocked flow
 and the reason.
 
-## Why does my site run some labs on Riverside?
+## Why does my site run some labs on the built-in plant?
 
 A lab needs every role it uses (for example a jump host), and its solution
 must still solve it on your plant. The Site tab shows the reason for each
 lab. See [Use your own plant](customize.md).
+
+## Which plant should I start with?
+
+Riverside is the gentlest: one simple process and two controllers. The
+compressor station adds a control centre over a WAN and a commercial meter;
+the data centre adds life safety, power monitoring and customers on the
+internet. The ideas carry over, so pick the one closest to your work.
 
 ## Is there a command line version?
 

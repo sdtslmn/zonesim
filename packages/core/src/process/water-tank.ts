@@ -8,7 +8,7 @@
 // a manual pump command). An independent safety function stops the pump at
 // a trip level unless it is bypassed. All numbers come from the site file.
 
-import type { PlantAlarm, ProcessModel, ProcessModelType, ParamSpec, SignalSpec } from "./model.js";
+import type { PlantAlarm, ProcessModel, ProcessModelType, ParamSpec, SignalSpec, Readout, TrendSpec } from "./model.js";
 
 const PARAMS: ParamSpec[] = [
   { name: "initialLevel", default: 55, min: 0, max: 100, description: "Tank level at start, %" },
@@ -212,6 +212,76 @@ export class WaterTank implements ProcessModel {
     if (this.chlorine > p.chlorineHigh) out.push({ id: "cl-high", text: "Chlorine residual high: overdosing", severity: "high" });
     if (!this.autoMode) out.push({ id: "manual", text: "Level control is in manual mode", severity: "low" });
     return out;
+  }
+
+  readonly quietAlarms = ["level-h", "level-l", "manual"];
+  readonly headline = "level";
+  readonly trends: TrendSpec[] = [
+    { signal: "level", label: "Level", scale: 0.1, max: 100 },
+    { signal: "chlorine", label: "Chlorine residual", scale: 0.01, max: 5 },
+  ];
+
+  readouts(get: (signal: string) => number, ctx: { safety?: string }): Readout[] {
+    const p = this.params;
+    const t = this.tags;
+    const level = get("level") / 10;
+    const cl = get("chlorine") / 100;
+    const pump = get("pump.running") === 1;
+    const auto = get("control.auto") === 1;
+    const dosing = get("dosing.running") === 1;
+    const trip = get("sis.tripped") === 1;
+    const bypass = get("sis.bypassed") === 1;
+    const overflow = get("alarm.overflow") === 1;
+    return [
+      { id: "level", label: `Tank ${t.tank} level`, text: `${level.toFixed(1)} %`, bar: level, note: `start ${get("setpoint.start") / 10} %, stop ${get("setpoint.stop") / 10} %`, state: overflow ? "bad" : level >= p.highAlarm || level <= p.lowAlarm ? "warn" : "ok", strip: `${t.tank} ${level.toFixed(1)} %`, hmi: true },
+      { id: "pump", label: `Inlet pump ${t.pump}`, text: pump ? "running" : "stopped", note: auto ? "auto" : "MANUAL", state: pump ? "ok" : "idle", strip: `${t.pump} ${pump ? "running" : "stopped"}${auto ? "" : " (manual)"}`, hmi: true },
+      { id: "dosing", label: `Dosing pump ${t.dosing}`, text: dosing ? "on" : "OFF", state: dosing ? "ok" : "bad", hmi: true },
+      { id: "chlorine", label: "Chlorine residual", text: `${cl.toFixed(2)} mg/L`, note: `setpoint ${(get("setpoint.chlorine") / 100).toFixed(2)} mg/L`, state: cl < p.chlorineLow || cl > p.chlorineHigh ? "bad" : "ok", strip: `Cl ${cl.toFixed(2)} mg/L`, hmi: true },
+      { id: "sis", label: `Safety system${ctx.safety ? ` ${ctx.safety}` : ""}`, text: bypass ? "BYPASSED" : trip ? "TRIPPED" : "armed", note: `trips at ${get("sis.trip_level") / 10} %`, state: bypass ? "bad" : trip ? "warn" : "ok", strip: bypass ? "SIS bypassed" : trip ? "SIS tripped" : "SIS armed", hmi: true },
+    ];
+  }
+
+  notes(): string[] {
+    return this.overflowSeconds > 0 ? [`Overflow: ${Math.round(this.overflowSeconds)} s of spillage so far`] : [];
+  }
+
+  alarmDetail(id: string): string {
+    const p = this.params;
+    switch (id) {
+      case "overflow":
+        return `The tank is full and the inlet pump keeps running. Auto mode: ${this.autoMode ? "on" : "off"}, safety bypass: ${this.bypassed ? "on" : "off"}, stop level ${this.stopSp / 10} %.`;
+      case "level-hh":
+        return `Level ${this.level.toFixed(1)} %. The safety system trips at ${this.tripSp / 10} %${this.bypassed ? ", but its trip is bypassed" : ""}.`;
+      case "sis-trip":
+        return `The safety system stopped inlet pump ${this.tags.pump} on high-high level. It resets when the level falls below ${p.tripReset} %.`;
+      case "sis-bypass":
+        return "The high-high trip is bypassed. Nothing stops the tank from overflowing if the level control fails.";
+      case "cl-low":
+        return `Chlorine residual is ${this.chlorine.toFixed(2)} mg/L, below ${p.chlorineLow} mg/L. Dosing ${this.dosingRunning ? "on" : "off"}, setpoint ${(this.chlorineSp / 100).toFixed(2)} mg/L.`;
+      case "cl-high":
+        return `Chlorine residual is ${this.chlorine.toFixed(2)} mg/L, above ${p.chlorineHigh} mg/L. Setpoint ${(this.chlorineSp / 100).toFixed(2)} mg/L.`;
+      default:
+        return "";
+    }
+  }
+
+  snapshot(): Record<string, number | boolean> {
+    const r = (n: number, d: number) => Math.round(n * 10 ** d) / 10 ** d;
+    return {
+      level: r(this.level, 1),
+      chlorine: r(this.chlorine, 2),
+      pumpRunning: this.pumpRunning,
+      dosingRunning: this.dosingRunning,
+      autoMode: this.autoMode,
+      sisTrip: this.sisTrip,
+      bypassed: this.bypass,
+      overflowing: this.overflowing,
+      overflowSeconds: r(this.overflowSeconds, 1),
+      startLevel: this.startSp,
+      stopLevel: this.stopSp,
+      chlorineSetpoint: this.chlorineSp,
+      tripLevel: this.tripSp,
+    };
   }
 }
 

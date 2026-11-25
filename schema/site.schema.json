@@ -44,7 +44,9 @@
       "properties": {
         "model": {
           "enum": [
-            "water-tank"
+            "water-tank",
+            "gas-compressor",
+            "dc-cooling"
           ],
           "description": "The process the plant runs"
         },
@@ -53,11 +55,11 @@
           "properties": {
             "source": {
               "type": "string",
-              "default": "river"
+              "default": "upstream line"
             },
             "consumer": {
               "type": "string",
-              "default": "town"
+              "default": "downstream line"
             },
             "tank": {
               "type": "string",
@@ -65,11 +67,51 @@
             },
             "pump": {
               "type": "string",
-              "default": "P-101"
+              "default": "CHWP-1"
             },
             "dosing": {
               "type": "string",
               "default": "P-201"
+            },
+            "compressor": {
+              "type": "string",
+              "default": "K-101"
+            },
+            "recycle": {
+              "type": "string",
+              "default": "UV-101"
+            },
+            "esd": {
+              "type": "string",
+              "default": "SDV-102"
+            },
+            "relief": {
+              "type": "string",
+              "default": "PSV-103"
+            },
+            "meter": {
+              "type": "string",
+              "default": "FQ-104"
+            },
+            "hall": {
+              "type": "string",
+              "default": "Data hall 1"
+            },
+            "chiller1": {
+              "type": "string",
+              "default": "CH-1"
+            },
+            "chiller2": {
+              "type": "string",
+              "default": "CH-2"
+            },
+            "crah": {
+              "type": "string",
+              "default": "CRAH units"
+            },
+            "agent": {
+              "type": "string",
+              "default": "clean agent"
             }
           },
           "additionalProperties": {
@@ -96,10 +138,10 @@
             },
             "demand": {
               "type": "number",
-              "minimum": 0,
-              "maximum": 20,
-              "default": 0.5,
-              "description": "Level drop per second from consumption, %"
+              "minimum": 1,
+              "maximum": 100,
+              "default": 35,
+              "description": "Gas the downstream customers take, % of design flow"
             },
             "startLevel": {
               "type": "number",
@@ -118,16 +160,16 @@
             "lowAlarm": {
               "type": "number",
               "minimum": 0,
-              "maximum": 100,
-              "default": 20,
-              "description": "Low level alarm, %"
+              "maximum": 300,
+              "default": 50,
+              "description": "Downstream pressure low alarm, bar"
             },
             "highAlarm": {
               "type": "number",
               "minimum": 0,
-              "maximum": 100,
-              "default": 85,
-              "description": "High level alarm, %"
+              "maximum": 300,
+              "default": 70,
+              "description": "Discharge pressure high alarm, bar"
             },
             "highHighAlarm": {
               "type": "number",
@@ -146,9 +188,9 @@
             "tripReset": {
               "type": "number",
               "minimum": 0,
-              "maximum": 100,
-              "default": 80,
-              "description": "The safety trip resets below this level, %"
+              "maximum": 300,
+              "default": 68,
+              "description": "The safety trip resets below this pressure, bar"
             },
             "chlorineSetpoint": {
               "type": "number",
@@ -191,6 +233,160 @@
               "maximum": 3600,
               "default": 40,
               "description": "Seconds for the residual to decay with dosing off"
+            },
+            "suctionPressure": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 40,
+              "description": "Upstream (suction) pressure, bar"
+            },
+            "headMax": {
+              "type": "number",
+              "minimum": 5,
+              "maximum": 300,
+              "default": 70,
+              "description": "Pressure the compressor adds at full speed and no flow, bar"
+            },
+            "setpoint": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 300,
+              "default": 65,
+              "description": "Default discharge pressure setpoint, bar"
+            },
+            "designFlow": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 100000,
+              "default": 400,
+              "description": "Design flow, thousand standard m³ per hour"
+            },
+            "tripPressure": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 300,
+              "default": 75,
+              "description": "Default safety trip pressure (PSHH), bar"
+            },
+            "reliefPressure": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 300,
+              "default": 80,
+              "description": "Relief valve set pressure, bar"
+            },
+            "surgeLine": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 99,
+              "default": 55,
+              "description": "Minimum flow through the compressor, % of what its speed can push"
+            },
+            "surgeMargin": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 15,
+              "description": "Margin the anti-surge controller keeps above the surge line, %"
+            },
+            "pressureRate": {
+              "type": "number",
+              "minimum": 0.01,
+              "maximum": 20,
+              "default": 0.5,
+              "description": "Pressure change per second at a 100 % flow imbalance, bar"
+            },
+            "speedRate": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 100,
+              "default": 2,
+              "description": "How fast the speed can change, % per second"
+            },
+            "vibrationTrip": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 600,
+              "default": 10,
+              "description": "Seconds of surge before the compressor trips on vibration"
+            },
+            "itLoad": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 100000,
+              "default": 1200,
+              "description": "IT load of the hall, kW"
+            },
+            "chillerCapacity": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 100000,
+              "default": 1500,
+              "description": "Cooling capacity of each chiller, kW"
+            },
+            "chwSetpoint": {
+              "type": "number",
+              "minimum": 4,
+              "maximum": 30,
+              "default": 14,
+              "description": "Default chilled water supply setpoint, °C"
+            },
+            "supplyAirSetpoint": {
+              "type": "number",
+              "minimum": 10,
+              "maximum": 35,
+              "default": 24,
+              "description": "Default CRAH supply air (cold aisle) setpoint, °C"
+            },
+            "approach": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 8,
+              "description": "How much warmer the cold aisle is than the chilled water at best, K"
+            },
+            "recommendedMax": {
+              "type": "number",
+              "minimum": 15,
+              "maximum": 45,
+              "default": 27,
+              "description": "Top of the recommended server inlet range, °C"
+            },
+            "allowableMax": {
+              "type": "number",
+              "minimum": 15,
+              "maximum": 50,
+              "default": 32,
+              "description": "Top of the allowable server inlet range, °C"
+            },
+            "shutdownTemp": {
+              "type": "number",
+              "minimum": 15,
+              "maximum": 60,
+              "default": 35,
+              "description": "Servers shut down above this inlet temperature, °C"
+            },
+            "warmingRate": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 30,
+              "default": 2,
+              "description": "Cold aisle warming with no cooling at full load, °C per minute"
+            },
+            "chwRate": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 30,
+              "default": 1,
+              "description": "Chilled water warming with no chiller at full load, °C per minute"
+            },
+            "shutdownLoad": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 30,
+              "description": "IT load left after the thermal shutdown, %"
             }
           },
           "additionalProperties": false
@@ -412,7 +608,47 @@
                         "sis.bypassed",
                         "level",
                         "chlorine",
-                        "sis.level"
+                        "sis.level",
+                        "compressor.run",
+                        "antisurge.auto",
+                        "setpoint.discharge",
+                        "setpoint.speed",
+                        "setpoint.recycle",
+                        "sis.trip_pressure",
+                        "meter.factor",
+                        "compressor.running",
+                        "alarm.surge",
+                        "alarm.high_pressure",
+                        "alarm.venting",
+                        "valve.esd_closed",
+                        "pressure.suction",
+                        "pressure.discharge",
+                        "speed",
+                        "recycle",
+                        "flow",
+                        "surge.margin",
+                        "sis.pressure",
+                        "meter.flow",
+                        "chiller1.enable",
+                        "chiller2.enable",
+                        "pump.run",
+                        "fire.isolate",
+                        "fire.release",
+                        "setpoint.chw",
+                        "setpoint.supply_air",
+                        "chiller1.running",
+                        "chiller2.running",
+                        "alarm.high_temp",
+                        "alarm.critical_temp",
+                        "fire.isolated",
+                        "fire.alarm",
+                        "fire.discharged",
+                        "temp.chw_supply",
+                        "temp.cold_aisle",
+                        "load.it",
+                        "power.cooling",
+                        "pue",
+                        "fire.temp"
                       ],
                       "description": "The process signal this point exposes"
                     },
@@ -465,7 +701,47 @@
                         "sis.bypassed",
                         "level",
                         "chlorine",
-                        "sis.level"
+                        "sis.level",
+                        "compressor.run",
+                        "antisurge.auto",
+                        "setpoint.discharge",
+                        "setpoint.speed",
+                        "setpoint.recycle",
+                        "sis.trip_pressure",
+                        "meter.factor",
+                        "compressor.running",
+                        "alarm.surge",
+                        "alarm.high_pressure",
+                        "alarm.venting",
+                        "valve.esd_closed",
+                        "pressure.suction",
+                        "pressure.discharge",
+                        "speed",
+                        "recycle",
+                        "flow",
+                        "surge.margin",
+                        "sis.pressure",
+                        "meter.flow",
+                        "chiller1.enable",
+                        "chiller2.enable",
+                        "pump.run",
+                        "fire.isolate",
+                        "fire.release",
+                        "setpoint.chw",
+                        "setpoint.supply_air",
+                        "chiller1.running",
+                        "chiller2.running",
+                        "alarm.high_temp",
+                        "alarm.critical_temp",
+                        "fire.isolated",
+                        "fire.alarm",
+                        "fire.discharged",
+                        "temp.chw_supply",
+                        "temp.cold_aisle",
+                        "load.it",
+                        "power.cooling",
+                        "pue",
+                        "fire.temp"
                       ],
                       "description": "The process signal this point exposes"
                     },
@@ -518,7 +794,47 @@
                         "sis.bypassed",
                         "level",
                         "chlorine",
-                        "sis.level"
+                        "sis.level",
+                        "compressor.run",
+                        "antisurge.auto",
+                        "setpoint.discharge",
+                        "setpoint.speed",
+                        "setpoint.recycle",
+                        "sis.trip_pressure",
+                        "meter.factor",
+                        "compressor.running",
+                        "alarm.surge",
+                        "alarm.high_pressure",
+                        "alarm.venting",
+                        "valve.esd_closed",
+                        "pressure.suction",
+                        "pressure.discharge",
+                        "speed",
+                        "recycle",
+                        "flow",
+                        "surge.margin",
+                        "sis.pressure",
+                        "meter.flow",
+                        "chiller1.enable",
+                        "chiller2.enable",
+                        "pump.run",
+                        "fire.isolate",
+                        "fire.release",
+                        "setpoint.chw",
+                        "setpoint.supply_air",
+                        "chiller1.running",
+                        "chiller2.running",
+                        "alarm.high_temp",
+                        "alarm.critical_temp",
+                        "fire.isolated",
+                        "fire.alarm",
+                        "fire.discharged",
+                        "temp.chw_supply",
+                        "temp.cold_aisle",
+                        "load.it",
+                        "power.cooling",
+                        "pue",
+                        "fire.temp"
                       ],
                       "description": "The process signal this point exposes"
                     },
@@ -571,7 +887,47 @@
                         "sis.bypassed",
                         "level",
                         "chlorine",
-                        "sis.level"
+                        "sis.level",
+                        "compressor.run",
+                        "antisurge.auto",
+                        "setpoint.discharge",
+                        "setpoint.speed",
+                        "setpoint.recycle",
+                        "sis.trip_pressure",
+                        "meter.factor",
+                        "compressor.running",
+                        "alarm.surge",
+                        "alarm.high_pressure",
+                        "alarm.venting",
+                        "valve.esd_closed",
+                        "pressure.suction",
+                        "pressure.discharge",
+                        "speed",
+                        "recycle",
+                        "flow",
+                        "surge.margin",
+                        "sis.pressure",
+                        "meter.flow",
+                        "chiller1.enable",
+                        "chiller2.enable",
+                        "pump.run",
+                        "fire.isolate",
+                        "fire.release",
+                        "setpoint.chw",
+                        "setpoint.supply_air",
+                        "chiller1.running",
+                        "chiller2.running",
+                        "alarm.high_temp",
+                        "alarm.critical_temp",
+                        "fire.isolated",
+                        "fire.alarm",
+                        "fire.discharged",
+                        "temp.chw_supply",
+                        "temp.cold_aisle",
+                        "load.it",
+                        "power.cooling",
+                        "pue",
+                        "fire.temp"
                       ],
                       "description": "The process signal this point exposes"
                     },

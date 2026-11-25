@@ -1,0 +1,56 @@
+id: g04-flat-network
+site: gas-compressor-station
+title: One write from the office trips the compressor
+level: beginner
+minutes: 12
+topic: Attack and detection
+intro: |
+  The station office PC ${office} sits on the same flat network as the unit
+  PLC. Play an attacker on it: find the controllers, then switch the
+  anti-surge controller to manual and close the recycle valve. At today's low
+  flow the compressor needs that valve open.
+
+  Watch what happens, then put the station right. This is a simulated plant,
+  so go ahead.
+tasks:
+  - "From ${office}, find the controllers: `ssh ${office} nmap ${plc.net}`."
+  - "From ${office}, put the anti-surge controller in manual: write 0 to ${plc} coil ${plc:antisurge.auto}. Then close the valve: write 0 to holding register ${plc:setpoint.recycle}."
+  - Run `wait 30`, then `plant`. The compressor surged and machine protection tripped it. The downstream pressure starts to fall.
+  - On the console, run `alerts` and open the alert about the writes with `alerts show ID`.
+  - From ${hmi}, put the anti-surge controller back in auto (coil ${plc:antisurge.auto} = 1).
+  - Machine protection holds the compressor for about a minute. Run `wait 60`, then restart it from ${hmi} with coil ${plc:compressor.run} = 1.
+  - Acknowledge the alerts once you have read them.
+checks:
+  - name: The IDS noticed the scan from ${office}
+    alert: { title: Network scan, src: "${office}" }
+  - name: The anti-surge controller is back in auto
+    register: { host: "${plc}", signal: antisurge.auto, equals: 1 }
+  - name: The compressor is running again
+    state: { path: plant.running, equals: true }
+  - name: The alert for ${office}'s writes is acknowledged
+    alert: { title: Unauthorized Modbus write, src: "${office}", acked: true }
+hints:
+  - "`ssh ${office} modbus write ${plc} coil ${plc:antisurge.auto} 0`, then `ssh ${office} modbus write ${plc} hr ${plc:setpoint.recycle} 0`."
+  - "`ssh ${hmi} modbus write ${plc} coil ${plc:antisurge.auto} 1` restores the protection. After `wait 60`, `ssh ${hmi} modbus write ${plc} coil ${plc:compressor.run} 1` restarts the compressor."
+  - "`alerts ack all` acknowledges every alert."
+solution:
+  - ssh ${office} nmap ${plc.net}
+  - ssh ${office} modbus write ${plc} coil ${plc:antisurge.auto} 0
+  - ssh ${office} modbus write ${plc} hr ${plc:setpoint.recycle} 0
+  - wait 30
+  - ssh ${hmi} modbus write ${plc} coil ${plc:antisurge.auto} 1
+  - wait 60
+  - ssh ${hmi} modbus write ${plc} coil ${plc:compressor.run} 1
+  - wait 30
+  - alerts ack all
+learned: |
+  Surge is gas flowing backwards through the compressor in violent cycles.
+  It wrecks seals and bearings in seconds, which is why the anti-surge
+  controller exists. Two Modbus writes from an office PC switched that
+  protection off, and nothing on the network stopped them. The IDS saw the
+  scan and the writes, but detection is not prevention: that takes zones and
+  conduits.
+refs:
+  - API 617 (centrifugal compressors, surge)
+  - API 670 (machinery protection systems)
+  - MITRE ATT&CK for ICS T0855 (unauthorized command message)

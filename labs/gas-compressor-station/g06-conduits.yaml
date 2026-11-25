@@ -1,0 +1,84 @@
+id: g06-conduits
+site: gas-compressor-station
+title: Connect the zones with conduits
+level: intermediate
+minutes: 15
+topic: Conduits
+intro: |
+  The zones are in place and the station is half blind: the historian cannot
+  read the controllers, the control centre has lost the station, and the
+  reports are empty. Add conduits with firewall rules for exactly the flows
+  the station needs. A new conduit denies everything.
+
+  `plant` and `report` list each blocked flow and the reason.
+setup:
+  - zone create enterprise --sl 1
+  - zone create dmz --sl 2
+  - zone create operations --sl 2
+  - zone create control --sl 3
+  - zone create safety --sl 3
+  - zone set ${control-centre.zone} --sl 2
+  - zone add enterprise ${office}
+  - zone add dmz ${report-server} ${jump}
+  - zone add operations ${historian}
+  - zone add control ${hmi} ${ews} ${plc} ${meter}
+  - zone add safety ${sis}
+  - zone delete ${plc.zone}
+tasks:
+  - Run `plant` to see which data flows are blocked.
+  - "Create a conduit for each pair of zones that must talk, for example `conduit create ops-control operations control`."
+  - "Add an allow rule for each flow, for example `fw allow ops-control from ${historian} to ${plc} modbus`."
+  - Bring back every data flow except the compressor maker's remote login (that is lab G08). The control centre needs ${plc} and ${meter} across the WAN, and the compressor maker reads its reports from ${report-server}.
+  - Keep the office away from the plant. ${office} must not reach ${plc} or the historian.
+checks:
+  - name: The historian reads ${plc}
+    required: historian-plc
+  - name: The historian reads ${sis}
+    required: historian-sis
+  - name: The historian reads the flow computer
+    required: historian-meter
+  - name: The HMI shows the ESD status
+    required: hmi-sis
+  - name: The control centre reaches ${plc} across the WAN
+    required: occ-plc
+  - name: The control centre reads the flow computer
+    required: occ-meter
+  - name: The historian copies data to ${report-server}
+    required: historian-replica
+  - name: Office reports work from ${report-server}
+    required: office-reports
+  - name: The compressor maker reads its reports from ${report-server}
+    required: oem-monitoring
+  - name: ${office} cannot reach ${plc}
+    flow: { from: "${office}", to: "${plc}", service: modbus, expect: blocked }
+  - name: ${office} cannot reach the historian
+    flow: { from: "${office}", to: "${historian}", service: https, expect: blocked }
+hints:
+  - "The historian talks to three zones: control (${plc} and ${meter}), safety (${sis}) and dmz (${report-server})."
+  - "The control centre's zone is ${control-centre.zone}: `conduit create wan-control ${control-centre.zone} control`, then one rule for ${plc} and one for ${meter}."
+  - "The compressor maker is in ${vendor.zone}: `conduit create inet-dmz ${vendor.zone} dmz` and `fw allow inet-dmz from ${vendor} to ${report-server} https`."
+solution:
+  - conduit create ops-control operations control
+  - fw allow ops-control from ${historian} to ${plc} modbus
+  - fw allow ops-control from ${historian} to ${meter} modbus
+  - conduit create ops-safety operations safety
+  - fw allow ops-safety from ${historian} to ${sis} modbus
+  - conduit create control-safety control safety
+  - fw allow control-safety from ${hmi} to ${sis} modbus
+  - conduit create wan-control ${control-centre.zone} control
+  - fw allow wan-control from ${control-centre} to ${plc} modbus
+  - fw allow wan-control from ${control-centre} to ${meter} modbus
+  - conduit create ops-dmz operations dmz
+  - fw allow ops-dmz from ${historian} to ${report-server} https
+  - conduit create ent-dmz enterprise dmz
+  - fw allow ent-dmz from ${office} to ${report-server} https
+  - conduit create inet-dmz ${vendor.zone} dmz
+  - fw allow inet-dmz from ${vendor} to ${report-server} https
+learned: |
+  Every conduit now carries named flows from named hosts. Look at the WAN
+  conduit though: the control centre may send any Modbus request to ${plc}
+  and ${meter}, including a new meter factor for the flow computer. The next
+  lab narrows that with function code filtering.
+refs:
+  - IEC 62443-3-2 ZCR 3 (partition into zones and conduits)
+  - IEC 62443-3-3 SR 5.2 RE 1 (deny by default, allow by exception)

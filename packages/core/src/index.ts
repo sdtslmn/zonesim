@@ -1,8 +1,8 @@
 export { VERSION } from "./version.js";
-export { Sim, STEP, describeRequest, type SimOptions, type TrafficEvent, type Conversation, type Alert, type FwLogEntry, type SimSnapshot, type Severity, type HmiView } from "./sim.js";
+export { Sim, STEP, describeRequest, type SimOptions, type TrafficEvent, type Conversation, type Alert, type FwLogEntry, type SimSnapshot, type Severity } from "./sim.js";
 export { FC_NAMES, READ_FCS, WRITE_FCS, EXCEPTIONS, TABLES, TABLE_NAMES, tableFor, type ModbusRequest, type ModbusReply, type PointTable } from "./modbus.js";
 export { Controller } from "./device.js";
-export { PROCESS_MODELS, WaterTank, WATER_TANK, type ProcessModel, type ProcessModelType, type SignalSpec, type ParamSpec, type PlantAlarm } from "./process/index.js";
+export { PROCESS_MODELS, WaterTank, WATER_TANK, GasCompressor, GAS_COMPRESSOR, DcCooling, DC_COOLING, type ProcessModel, type ProcessModelType, type SignalSpec, type ParamSpec, type PlantAlarm, type Readout, type ReadoutState, type TrendSpec } from "./process/index.js";
 export { Network, SERVICES, SERVICE_NAMES, LEVEL_NAMES, ruleText, endpointText, type Host, type Zone, type Conduit, type Rule, type Endpoint, type Verdict, type ServiceName } from "./network.js";
 export { requiredFlowStatus, riskChecks, RISK_IDS, type FlowStatus, type RiskCheck } from "./checks.js";
 export { loadSite, unknownFields, parseSiteText, renameInSite, hostByRole, siteCompatible, flowTitle, SITE_SCHEMA, LEVELS, SITE_SERVICES, type Site, type SiteHost, type SiteDevice, type SitePoint, type SiteFlow, type SiteLoadResult } from "./site.js";
@@ -10,7 +10,7 @@ export { BUILTIN_SITE_FILES, SITE_TEMPLATES, DEFAULT_SITE, builtinSite, builtinS
 export { Shell, tokenize, quote, type IO, type CommandFn, type CmdContext } from "./shell.js";
 export { createShell } from "./create.js";
 export { MemoryFS, type FileSystem } from "./fs.js";
-export { parseLab, sortLabs, findLab, LabFormatError, LEVEL_ORDER, type Lab, type LabCheck, type Level } from "./labs/schema.js";
+export { parseLab, sortLabs, findLab, LabFormatError, LEVEL_ORDER, LAB_SITE_ORDER, type Lab, type LabCheck, type Level } from "./labs/schema.js";
 export { LabSession, type CheckResult } from "./labs/session.js";
 export { resolveLab, substitute, evalArithmetic } from "./labs/resolve.js";
 export { validateLabOnSite, validateLabsOnSite, type LabFit } from "./labs/validate.js";

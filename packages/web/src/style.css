@@ -845,6 +845,199 @@ ul.alert-list li {
   border-left-color: var(--warn) !important;
 }
 
+/* ---------------------------------------------------------------- gas and data centre pictures */
+
+svg.mimic .big.small {
+  font-size: 15px;
+}
+
+svg.mimic .pipe.gas.flow {
+  stroke: #e0a030;
+}
+
+svg.mimic .pipe.recycle {
+  stroke-width: 3;
+}
+
+svg.mimic .pipe.recycle.flow {
+  stroke: #e0a030;
+}
+
+svg.mimic .pipe.chw.flow {
+  stroke: #4aa3df;
+}
+
+svg.mimic .pipe.air {
+  stroke-width: 8;
+  stroke: #d7dde4;
+}
+
+svg.mimic .pipe.air.flow {
+  stroke: #9fd3f0;
+}
+
+svg.mimic .machine path {
+  fill: #fff;
+  stroke: #5f6b7a;
+  stroke-width: 2;
+}
+
+svg.mimic .machine.on path {
+  fill: #e9f7ef;
+  stroke: var(--ok);
+}
+
+svg.mimic .machine.bad path {
+  fill: #fdecea;
+  stroke: var(--bad);
+  animation: alert-pulse 0.5s ease-in-out infinite alternate;
+}
+
+svg.mimic .valve path {
+  stroke: #5f6b7a;
+  stroke-width: 1.5;
+}
+
+svg.mimic .valve.open path {
+  fill: #e9f7ef;
+}
+
+svg.mimic .valve.closed path {
+  fill: #37474f;
+}
+
+svg.mimic .psv path {
+  fill: #fff;
+  stroke: #5f6b7a;
+  stroke-width: 1.5;
+}
+
+svg.mimic .psv.venting path {
+  fill: #fdecea;
+  stroke: var(--bad);
+}
+
+svg.mimic .vent {
+  fill: none;
+  stroke: var(--bad) !important;
+  stroke-width: 2;
+  stroke-dasharray: 3 3;
+}
+
+svg.mimic .alarm-text {
+  font: 700 11px system-ui, sans-serif;
+  fill: var(--bad);
+}
+
+svg.mimic .box rect,
+svg.mimic rect.box {
+  fill: #fff;
+  stroke: #5f6b7a;
+  stroke-width: 1.5;
+}
+
+svg.mimic .box.on rect,
+svg.mimic rect.box.on {
+  fill: #e9f7ef;
+  stroke: var(--ok);
+}
+
+svg.mimic .box.standby rect {
+  fill: #f6f8fa;
+  stroke: #9aa5b1;
+  stroke-dasharray: 4 3;
+}
+
+svg.mimic .box.off rect {
+  fill: #fdecea;
+  stroke: var(--bad);
+}
+
+svg.mimic .hall {
+  stroke-width: 2;
+}
+
+svg.mimic .hall.ok {
+  fill: #eef7fd;
+  stroke: #4aa3df;
+}
+
+svg.mimic .hall.warn {
+  fill: #fff4e0;
+  stroke: var(--warn);
+}
+
+svg.mimic .hall.bad {
+  fill: #fdecea;
+  stroke: var(--bad);
+}
+
+svg.mimic .rack {
+  fill: #37474f;
+}
+
+svg.mimic .rack.off {
+  fill: #b0bec5;
+}
+
+table.readouts {
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+table.readouts td {
+  padding: 2px 12px 2px 0;
+  vertical-align: top;
+}
+
+table.readouts .st-ok {
+  color: var(--ok);
+}
+
+table.readouts .st-warn {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+table.readouts .st-bad {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+.pill.idle {
+  color: var(--muted);
+}
+
+.plant-group {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px 12px;
+  margin: 10px 0;
+}
+
+.plant-group[open] {
+  padding-bottom: 10px;
+}
+
+.lab-plant {
+  padding: 8px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.plant-links {
+  margin: 0 0 4px;
+}
+
+.lab-plant .meta {
+  display: block;
+  font-weight: 400;
+  margin-left: 18px;
+}
+
 /* ---------------------------------------------------------------- help, site, extras */
 
 .crumbs {

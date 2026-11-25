@@ -21,7 +21,7 @@ npm run dev:web        # the simulator on http://localhost:5173
 
 ## Adding a lab
 
-1. Copy a lab from `labs/` that is close to what you want.
+1. Copy a lab from `labs/<site>/` that is close to what you want.
 2. Follow the format in [docs/writing-labs.md](docs/writing-labs.md). Use
    placeholders such as `${plc}` instead of host names and addresses, so the
    lab also runs on sites people load themselves.
@@ -29,6 +29,14 @@ npm run dev:web        # the simulator on http://localhost:5173
    not solved before the solution runs, and that the solution solves it, on
    the built-in plant and on the template site.
 4. Open a pull request with a short note on what the learner practises.
+
+## Adding a process model
+
+A process model is one file in `packages/core/src/process/`: its signals,
+parameters, simulation step, readouts for the views, alarms and snapshot.
+Register it in `process/index.ts`, add a site that uses it, and optionally a
+picture in `packages/web/src/plant.ts` (without one, the Plant tab shows the
+readouts as a table).
 
 ## Adding a built-in site
 
@@ -52,7 +60,7 @@ do not present the simulator as a compliance tool.
 
 ## Code layout
 
-- `packages/core`: the engine (site loader, process model, controllers,
+- `packages/core`: the engine (site loader, process models, controllers,
   network policy, Modbus, IDS, shell, commands, labs). Runs in Node and in
   the browser.
 - `packages/web`: the browser app (labs, help and site panels, network map,
@@ -60,5 +68,5 @@ do not present the simulator as a compliance tool.
 - `packages/cli`: a small checker for site files and labs, for authors and
   CI.
 - `sites/`: built-in sites, and the template in `sites/templates/`.
-- `labs/`: the labs, one YAML file each.
+- `labs/`: the labs, one folder per plant, one YAML file per lab.
 - `docs/help/`: the help pages, shown in the Help tab and readable on GitHub.

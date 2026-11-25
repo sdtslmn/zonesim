@@ -1,0 +1,45 @@
+id: d02-read-temperatures
+site: data-centre-cooling
+title: Read temperatures and power over Modbus
+level: beginner
+minutes: 10
+topic: Modbus basics
+intro: |
+  The BMS polls ${plc} and the power meter gateway ${meter} over Modbus TCP
+  every few seconds. Temperatures sit in input registers in tenths of a
+  degree, so 240 means 24.0 °C. Setpoints sit in holding registers.
+
+  In this lab you read the hall the same way the BMS does.
+tasks:
+  - "Read the controller's register map from the vendor manual: `modbus map ${plc}`. This sends no traffic."
+  - "Log in to the BMS workstation: `ssh ${hmi}`."
+  - "Read the cold aisle temperature, input register ${plc:temp.cold_aisle}: `modbus read ${plc} ir ${plc:temp.cold_aisle}`. Then the chilled water supply temperature, input register ${plc:temp.chw_supply}."
+  - Read the IT load from the power meter gateway, ${meter} input register ${meter:load.it}.
+  - Read the chilled water setpoint, ${plc} holding register ${plc:setpoint.chw}.
+  - Type `exit`, and write the chilled water setpoint in °C into chw.txt.
+checks:
+  - name: The setpoint was read from ${hmi} (function code 3)
+    command: flows --mine
+    outputMatches: '${hmi}\s+${plc}\s+modbus\s+\S*\b3\b'
+  - name: The IT load was read from the power meter
+    command: flows --mine
+    outputMatches: '${hmi}\s+${meter}\s+modbus'
+  - name: chw.txt holds the chilled water setpoint in °C
+    file: { path: chw.txt, matches: '^\s*${param.chwSetpoint}(\.0+)?\s*(°C|C)?\s*$' }
+hints:
+  - "`modbus read ${meter} ir ${meter:load.it}` reads the IT load in kW."
+  - "A raw value of ${param.chwSetpoint*10} in tenths of a degree is ${param.chwSetpoint} °C. Write it with `echo ${param.chwSetpoint} > chw.txt`."
+solution:
+  - ssh ${hmi} modbus read ${plc} ir ${plc:temp.cold_aisle}
+  - ssh ${hmi} modbus read ${plc} ir ${plc:temp.chw_supply}
+  - ssh ${hmi} modbus read ${meter} ir ${meter:load.it}
+  - ssh ${hmi} modbus read ${plc} hr ${plc:setpoint.chw}
+  - echo ${param.chwSetpoint} > chw.txt
+learned: |
+  Many building and data centre controllers speak Modbus or BACnet, with no
+  login. Any host that reaches them reads the whole plant, and as the next
+  labs show, writes to it too. The power meter matters for more than
+  efficiency: its readings feed customer billing and capacity planning.
+refs:
+  - Modbus Application Protocol Specification v1.1b3
+  - ASHRAE TC 9.9 Thermal Guidelines for Data Processing Environments

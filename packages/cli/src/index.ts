@@ -5,7 +5,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadSiteFile, builtinSite, builtinSiteIds, validateLabsOnSite, parseLab, sortLabs, VERSION, C, stripAnsi, type Lab, type Site } from "@zonesim/core";
+import { loadSiteFile, builtinSite, builtinSiteIds, validateLabsOnSite, parseLab, sortLabs, VERSION, C, stripAnsi, siteCompatible, type Lab, type Site } from "@zonesim/core";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -55,7 +55,7 @@ function loadLabs(dir: string): { labs: Lab[]; errors: string[] } {
 }
 
 async function reportLabs(labs: Lab[], site: Site, quiet: boolean): Promise<{ ok: number; total: number; lines: string[] }> {
-  const fits = await validateLabsOnSite(labs, site);
+  const fits = await validateLabsOnSite(labs.filter((l) => siteCompatible(site, l.site)), site);
   const lines: string[] = [];
   for (const f of fits) {
     if (f.ok) {
@@ -96,7 +96,7 @@ async function validateSites(files: string[], labsDir: string, quiet: boolean): 
     const chain = s.extends.length ? `, extends ${s.extends.join(" → ")}` : "";
     console.log(`${C.green("✓")} ${file}: ${s.name} (${s.id}${chain}), ${s.hosts.length} hosts, ${Object.keys(s.devices).length} controllers, ${s.flows.length} data flows`);
     for (const w of r.warnings ?? []) console.log(`  ${C.yellow("note")}  ${w}`);
-    if (labs.length) {
+    if (labs.some((l) => siteCompatible(s, l.site))) {
       const rep = await reportLabs(labs, s, quiet);
       console.log(`  Labs that run on this site: ${rep.ok} of ${rep.total}.${rep.ok < rep.total ? " The others run on the site they were written for." : ""}`);
       for (const l of rep.lines) console.log(l);

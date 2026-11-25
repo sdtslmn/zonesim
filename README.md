@@ -1,12 +1,12 @@
 # ZoneSim
 
-**An OT/ICS security training simulator.** Take a small water treatment plant
-that sits on one flat network, and secure it: group the hosts into IEC 62443
-zones, connect them with conduits and firewall rules, filter Modbus function
-codes, route vendor access through a DMZ, and investigate the alerts when
-someone attacks the plant. Or load your own site, with your host names,
-addresses and Modbus map, and run the same labs on it. It runs in your
-browser, and nothing real is touched.
+**An OT/ICS security training simulator.** Take a plant that sits on one
+flat network, and secure it: group the hosts into IEC 62443 zones, connect
+them with conduits and firewall rules, filter Modbus function codes, route
+vendor access through a DMZ, and investigate the alerts when someone attacks
+the plant. There are three plants to practise on (a water treatment plant, a
+gas compressor station and a data centre), 34 labs, and you can load your
+own site. It runs in your browser, and nothing real is touched.
 
 **Try it in your browser: [sdtslmn.github.io/zonesim](https://sdtslmn.github.io/zonesim/)**
 
@@ -20,10 +20,12 @@ step. [Open this lab](https://sdtslmn.github.io/zonesim/?lab=i03), or see the
 
 ## What you can do
 
-- **Look around a working plant.** A tank, an inlet pump, chlorine dosing, a
-  PLC and an independent safety system. Change a setpoint and the process
-  responds. Turn off dosing and the water becomes unsafe. Bypass the safety
-  system and the tank overflows.
+- **Look around a working plant.** Each plant runs a live process with real
+  consequences. At Riverside, turn off dosing and the water becomes unsafe,
+  or bypass the safety system and the tank overflows. At the compressor
+  station, close the anti-surge valve and the compressor surges and trips,
+  or bypass the ESD and the relief valve vents gas. In the data centre, stop
+  the chilled water pumps and the servers shut down within minutes.
 - **Attack it from the inside.** Scan for controllers from the office PC, read
   the PLC's firmware, and write to it. Modbus has no login, so on a flat
   network that just works, and the IDS sees it.
@@ -31,9 +33,10 @@ step. [Open this lab](https://sdtslmn.github.io/zonesim/?lab=i03), or see the
   conduits, and write least-privilege rules. Every conduit denies by default.
 - **Filter Modbus.** Let the historian read with function codes 3 and 4 but
   never write, and keep the safety system read-only from the network.
-- **Keep the plant running.** The plant needs eight data flows (HMI polling,
-  historian collection, office reports, vendor support). Block one and the
-  HMI goes blind or the reports stop, and the simulator tells you why.
+- **Keep the plant running.** Each plant needs its data flows (HMI polling,
+  historian collection, the control centre, customer dashboards, vendor
+  support). Block one and the HMI goes blind or the reports stop, and the
+  simulator tells you why.
 - **Watch it happen.** The network map shows zones, conduits and every
   request as a dot: green when it gets through, red where a firewall stops it.
 - **Get reviewed.** `report` checks your design against eight security
@@ -45,29 +48,48 @@ step. [Open this lab](https://sdtslmn.github.io/zonesim/?lab=i03), or see the
 
 ## Labs
 
-Every lab is checked automatically, with hints and a solution.
+Every lab is checked automatically, with hints and a solution. Each plant
+has its own set, from a tour to a full zone and conduit design.
 
-| # | Lab | Level |
+| Riverside water treatment plant | Kestrel compressor station | Harbour data centre |
 |---|---|---|
-| 1 | Get to know the plant | beginner |
-| 2 | Read the process over Modbus | beginner |
-| 3 | Change a setpoint like an operator | beginner |
-| 4 | Why a flat network is dangerous | beginner |
-| 5 | Group the hosts into zones | intermediate |
-| 6 | Connect the zones with conduits | intermediate |
-| 7 | Filter Modbus function codes | intermediate |
-| 8 | Office reports through the DMZ | intermediate |
-| 9 | Vendor remote access through a jump host | intermediate |
-| 10 | Investigate an unauthorized write | advanced |
-| 11 | Someone bypassed the safety system | scenario |
-| 12 | Segment the whole plant from scratch | scenario |
+| 1. Get to know the plant | 1. Get to know the compressor station | 1. Get to know the data hall |
+| 2. Read the process over Modbus | 2. Read the pressures over Modbus | 2. Read temperatures and power over Modbus |
+| 3. Change a setpoint like an operator | 3. Lower the discharge pressure like an operator | 3. Raise the chilled water temperature to save energy |
+| 4. Why a flat network is dangerous | 4. One write from the office trips the compressor | 4. Stopping the pumps from the office |
+| 5. Group the hosts into zones | 5. Group the station into zones | 5. Group the facility systems into zones |
+| 6. Connect the zones with conduits | 6. Connect the zones with conduits | 6. Connect the zones with conduits |
+| 7. Filter Modbus function codes | 7. Filter Modbus across the WAN | 7. Make monitoring read-only |
+| 8. Office reports through the DMZ | 8. Compressor maker support through a jump host | 8. Chiller vendor support through a jump host |
+| 9. Vendor remote access through a jump host | 9. The gas bill does not add up | 9. The hall is running hot |
+| 10. Investigate an unauthorized write | 10. Someone bypassed the pressure trip | 10. Someone isolated the fire suppression |
+| 11. Someone bypassed the safety system | 11. Segment the whole station from scratch | 11. Segment the whole facility from scratch |
+| 12. Segment the whole plant from scratch | | |
 
 Link straight to a lab with `?lab=`, for example
-[sdtslmn.github.io/zonesim/?lab=i03](https://sdtslmn.github.io/zonesim/?lab=i03).
+[?lab=i03](https://sdtslmn.github.io/zonesim/?lab=i03) (Riverside),
+[?lab=g09](https://sdtslmn.github.io/zonesim/?lab=g09) (compressor station) or
+[?lab=d10](https://sdtslmn.github.io/zonesim/?lab=d10) (data centre).
 
-## The plant
+## The plants
 
-The built-in site is Riverside, a small drinking water plant:
+| Plant | Process | Controllers | Also on the network |
+|---|---|---|---|
+| [Riverside water treatment plant](sites/riverside-water.yaml) | A tank filled by a pump, chlorine dosing, a high-level safety trip | plc-1, sis-1 | office PC, historian and its DMZ copy, jump host, vendor laptop |
+| [Kestrel compressor station](sites/gas-compressor-station.yaml) | Pipeline compressor with discharge pressure control, anti-surge recycle, ESD trip, relief valve | ucp-1, esd-1, flow computer fc-1 | the pipeline control centre over a WAN, the compressor maker over the internet |
+| [Harbour data centre](sites/data-centre-cooling.yaml) | N+1 chillers, chilled water pumps, CRAH units, IT load and PUE | cpc-1, fire panel fp-1, power meter pm-1 | BMS, DCIM, a customer portal for colocation tenants, the chiller vendor |
+
+Every plant starts on one flat network, with every data flow working and
+most security checks failing. Riverside also comes as
+[riverside-segmented](sites/riverside-segmented.yaml), the same plant with the
+finished design, to compare with yours. The plants, devices, vendors and
+register maps are fictional.
+
+![Kestrel compressor station in lab G4: two Modbus writes from the office PC closed the anti-surge valve and the compressor is in surge](docs/images/web-gas.png)
+
+![Harbour data centre in lab D4: the chilled water pumps were stopped from the office PC and the cold aisle is above the recommended 27 °C](docs/images/web-dc.png)
+
+For example, Riverside's hosts:
 
 | Host | IP | Purdue level | Role |
 |---|---|---|---|
@@ -81,21 +103,11 @@ The built-in site is Riverside, a small drinking water plant:
 | plc-1 | 10.10.10.10 | 1 Control | Tank and dosing PLC, Modbus TCP (`plc`) |
 | sis-1 | 10.10.10.20 | 1 Control | Safety instrumented system, Modbus TCP (`sis`) |
 
-The plant, the devices, the vendor and the register maps are fictional. The
-whole site is one file: [sites/riverside-water.yaml](sites/riverside-water.yaml).
-
-There are two built-in versions of it, both in the **Site** tab:
-
-| Site | Starts as | Use it to |
-|---|---|---|
-| `riverside-water` | one flat network, a direct vendor path from the internet | work through the labs and build the design yourself |
-| `riverside-segmented` | the finished design: office, DMZ, operations, control and safety zones, least-privilege conduits, Modbus filtering, a jump host with MFA | see the target architecture, compare it with yours, or start your own site from it |
-
 ## Use your own plant
 
 Start from the [template](sites/templates/my-site.yaml), change what you
-need, and load it in the **Site** tab. Anything you leave out comes from
-Riverside:
+need, and load it in the **Site** tab. Anything you leave out comes from the
+site you extend (here Riverside; the other plants work the same way):
 
 ```yaml
 schema: zonesim-site/1

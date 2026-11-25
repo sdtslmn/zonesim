@@ -110,8 +110,17 @@ export function parseLab(text: string, source = "lab"): Lab {
 }
 
 /** Labs in learning order: by level, then id. */
+/** Sites in the order their labs are listed. Sites not named here follow, alphabetically. */
+export const LAB_SITE_ORDER = ["riverside-water", "gas-compressor-station", "data-centre-cooling"];
+
+const siteRank = (id: string) => {
+  const i = LAB_SITE_ORDER.indexOf(id);
+  return i < 0 ? LAB_SITE_ORDER.length : i;
+};
+
+/** Labs grouped by site, then by level, then by id. */
 export function sortLabs(labs: Lab[]): Lab[] {
-  return [...labs].sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level] || a.id.localeCompare(b.id));
+  return [...labs].sort((a, b) => siteRank(a.site) - siteRank(b.site) || a.site.localeCompare(b.site) || LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level] || a.id.localeCompare(b.id));
 }
 
 /** Find a lab by number (1-based position), id, or id prefix like "b02". */

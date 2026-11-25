@@ -1,6 +1,7 @@
 # Writing labs
 
-A lab is one YAML file in `labs/<level>/`. Labs refer to the plant through
+A lab is one YAML file in `labs/<site>/`, for example
+`labs/gas-compressor-station/g04-flat-network.yaml`. Labs refer to the plant through
 placeholders, so the same lab runs on the built-in plant and on sites people
 load themselves. Example:
 
@@ -58,7 +59,8 @@ They work in every text field and in checks.
 | `${site.name}`, `${site.id}` | the site | |
 
 Any role works in place of `plc`: `sis`, `hmi`, `ews`, `historian`,
-`report-server`, `jump`, `office`, `vendor`, or roles a site defines. Inside
+`report-server`, `jump`, `office`, `vendor`, `control-centre`, `meter`,
+`customer`, or roles a site defines. Inside
 YAML flow mappings (`{ ... }`) and lists (`[ ... ]`), quote placeholders:
 `host: "${plc}"`.
 
@@ -98,9 +100,17 @@ Each check has a `name` and exactly one of these:
 `alone`, `slAtLeast`. Prefer `with` and `notWith` over `equals`, so learners
 can name their zones as they like.
 
-Required flow ids come from the site. On Riverside: `hmi-plc`, `hmi-sis`,
-`historian-plc`, `historian-sis`, `ews-plc`, `historian-replica`,
-`office-reports`, `vendor-support`.
+Required flow ids come from the site; `plant` lists them. On Riverside:
+`hmi-plc`, `hmi-sis`, `historian-plc`, `historian-sis`, `ews-plc`,
+`historian-replica`, `office-reports`, `vendor-support`. The compressor
+station adds `historian-meter`, `ews-meter`, `occ-plc`, `occ-meter` and
+`oem-monitoring`; the data centre uses `bms-*`, `dcim-*`, `customer-portal`
+and others (see its site file).
+
+Lab ids start with a short code learners can type: `b01` to `s02` for
+Riverside, `g01` to `g11` for the compressor station, `d01` to `d11` for the
+data centre. State checks read `plant.NAME` from the process snapshot, for
+example `plant.overflowing`, `plant.venting` or `plant.coldAisle`.
 
 Design check ids: `segmented`, `office-to-control`, `internet-dmz-only`,
 `sis-own-zone`, `sis-read-only`, `historian-read-only`, `remote-access`,

@@ -25,13 +25,17 @@ describe("labs", () => {
   it("use placeholders instead of host names and addresses", () => {
     for (const lab of labs) {
       const text = JSON.stringify([lab.intro, lab.tasks, lab.hints, lab.solution, lab.setup, lab.checks]);
-      expect(text, lab.id).not.toMatch(/\bplc-1\b|\bsis-1\b|\bhmi-01\b|10\.10\./);
+      expect(text, lab.id).not.toMatch(/\bplc-1\b|\bsis-1\b|\bhmi-01\b|\bucp-1\b|\besd-1\b|\bfc-1\b|\bcpc-1\b|\bfp-1\b|\bbms-01\b|10\.10\.|172\.16\.|10\.50\./);
     }
   });
 
+  it("cover every built-in plant", () => {
+    for (const id of ["riverside-water", "gas-compressor-station", "data-centre-cooling"]) expect(labs.filter((l) => l.site === id).length, id).toBeGreaterThanOrEqual(10);
+  });
+
   for (const lab of labs) {
-    it(`${lab.id} works on ${riverside.name}`, async () => {
-      const fit = await validateLabOnSite(lab, riverside);
+    it(`${lab.id} works on its own site`, async () => {
+      const fit = await validateLabOnSite(lab, builtinSite(lab.site));
       expect(fit.problems).toEqual([]);
     });
   }
@@ -41,7 +45,7 @@ describe("labs", () => {
     expect(templateResult.site?.hosts.find((h) => h.role === "plc")?.name).toBe("tank-plc");
   });
 
-  for (const lab of labs) {
+  for (const lab of labs.filter((l) => l.site === riverside.id)) {
     it(`${lab.id} works on the template site`, async () => {
       const fit = await validateLabOnSite(lab, templateResult.site!);
       expect(fit.problems).toEqual([]);
@@ -73,7 +77,7 @@ describe("placeholders", () => {
   });
 
   it("a lab that needs a missing role does not resolve", () => {
-    const broken = { ...labs[0], tasks: ["ssh ${pump}"] };
+    const broken = { ...labs.find((l) => l.site === "riverside-water")!, tasks: ["ssh ${pump}"] };
     expect(resolveLab(broken, site).error).toMatch(/pump/);
   });
 });

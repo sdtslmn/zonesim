@@ -100,9 +100,9 @@ export class Trainer {
     this.fits.clear();
   }
 
-  /** Run every lab's solution against the chosen site. */
+  /** Run the solution of every lab written for the chosen site's plant against it. */
   async checkLabs(): Promise<LabFit[]> {
-    const fits = await validateLabsOnSite(this.labs, this.site);
+    const fits = await validateLabsOnSite(this.labs.filter((l) => siteCompatible(this.site, l.site)), this.site);
     this.fits = new Map(fits.map((f) => [f.lab.id, f]));
     this.changed();
     return fits;
@@ -118,6 +118,7 @@ export class Trainer {
     const own = builtinSite(lab.site);
     const r = resolveLab(lab, own);
     if (!r.lab) throw new Error(`lab ${lab.id} does not resolve on its own site: ${r.error}`);
+    if (!siteCompatible(this.site, lab.site)) return { site: own, resolved: r.lab };
     const why = fit?.problems[0] ?? (siteCompatible(this.site, lab.site) ? resolveLab(lab, this.site).error : `${this.site.name} does not extend ${own.name}`);
     return { site: own, resolved: r.lab, note: `This lab runs on ${own.name}. It does not fit ${this.site.name}${why ? `: ${why}` : ""}.` };
   }
@@ -235,10 +236,16 @@ export class Trainer {
   labList(): string {
     const out: string[] = [C.bold("ZoneSim labs") + C.gray(`  (${this.done.size}/${this.labs.length} done)`)];
     let level = "";
+    let site = "";
     this.labs.forEach((l, i) => {
+      if (l.site !== site) {
+        site = l.site;
+        level = "";
+        out.push("", C.bold(C.cyan(builtinSite(site).name)));
+      }
       if (l.level !== level) {
         level = l.level;
-        out.push("", C.bold(level[0].toUpperCase() + level.slice(1)));
+        out.push(C.bold(`  ${level[0].toUpperCase() + level.slice(1)}`));
       }
       const mark = this.done.has(l.id) ? C.green("✔") : " ";
       out.push(`  ${mark} ${String(i + 1).padStart(2)}  ${this.labCode(l).padEnd(4)} ${l.title}  ${C.gray(`${l.minutes} min · ${l.topic}`)}`);
@@ -265,10 +272,17 @@ export class Trainer {
 
   // ---------------------------------------------------------------- lab actions
 
+  /** The next lab on the same plant, or the first unfinished one when no lab is open. */
   nextLab(): Lab | undefined {
     if (!this.lab) return this.labs.find((l) => !this.done.has(l.id)) ?? this.labs[0];
     const i = this.labs.indexOf(this.lab);
-    return this.labs[i + 1];
+    const next = this.labs[i + 1];
+    return next && next.site === this.lab.site ? next : undefined;
+  }
+
+  /** Labs written for the same plant as this one. */
+  plantLabs(lab: Lab): Lab[] {
+    return this.labs.filter((l) => l.site === lab.site);
   }
 
   async check(): Promise<CheckResult[]> {
@@ -285,7 +299,7 @@ export class Trainer {
       this.done.add(this.lab.id);
       this.opts.progress?.save([...this.done]);
       const next = this.nextLab();
-      io.stdout(next ? `\nType ${C.cyan("next")} to start: ${next.title}\n` : "\nThat was the last lab. Well done.\n");
+      io.stdout(next ? `\nType ${C.cyan("next")} to start: ${next.title}\n` : "\nThat was the last lab for this plant. Well done. Type labs to pick another plant.\n");
     } else {
       io.stdout(`${passed} of ${results.length} checks passed. Type ${C.cyan("hint")} if you are stuck.\n`);
     }

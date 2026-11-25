@@ -8,7 +8,7 @@
 import { WRITE_FCS, FC_NAMES, type ModbusReply, type ModbusRequest } from "./modbus.js";
 import { Network, type Host, type ServiceName, type Verdict } from "./network.js";
 import { requiredFlowStatus, riskChecks, type FlowStatus, type RiskCheck } from "./checks.js";
-import { PROCESS_MODELS, WaterTank, type ProcessModel } from "./process/index.js";
+import { PROCESS_MODELS, WaterTank, type ProcessModel, type Readout } from "./process/index.js";
 import { Controller } from "./device.js";
 import { builtinSite } from "./sites/index.js";
 import type { Site } from "./site.js";
@@ -79,16 +79,6 @@ export interface FwLogEntry {
   reason: string;
 }
 
-export interface HmiView {
-  level: number;
-  chlorine: number;
-  pump: boolean;
-  dosing: boolean;
-  auto: boolean;
-  sisTrip: boolean;
-  bypass: boolean;
-}
-
 export class Sim {
   readonly site: Site;
   readonly plant: ProcessModel;
@@ -100,8 +90,8 @@ export class Sim {
   conversations = new Map<string, Conversation>();
   alerts: Alert[] = [];
   fwlog: FwLogEntry[] = [];
-  /** Tank level every 5 seconds, for trends. */
-  trend: { t: number; level: number; chlorine: number }[] = [];
+  /** The process trends every 5 seconds, in engineering units, in the order of plant.trends. */
+  trend: { t: number; values: number[] }[] = [];
   /** Signal values the HMI last read, and when it last heard from each device. */
   hmiValues: Record<string, number> = {};
   hmiLast: Record<string, number> = {};
@@ -189,7 +179,7 @@ export class Sim {
     this.backgroundTraffic();
     this.processAlarms();
     if (this.every("trend", 5)) {
-      this.trend.push({ t: this.t, level: this.plant.get("level") / 10, chlorine: this.plant.get("chlorine") / 100 });
+      this.trend.push({ t: this.t, values: this.plant.trends.map((x) => this.plant.get(x.signal) * x.scale) });
       if (this.trend.length > 240) this.trend.shift();
     }
   }
@@ -226,18 +216,19 @@ export class Sim {
     return this.hmiCommOk;
   }
 
-  /** What the operator screen shows (values from the last successful poll). */
-  get hmiView(): HmiView {
-    const v = this.hmiValues;
-    return {
-      level: (v.level ?? 0) / 10,
-      chlorine: (v.chlorine ?? 0) / 100,
-      pump: v["pump.running"] === 1,
-      dosing: v["dosing.running"] === 1,
-      auto: v["control.auto"] === 1,
-      sisTrip: v["sis.tripped"] === 1,
-      bypass: v["sis.bypassed"] === 1,
-    };
+  /** Name of the safety system host, for labels. */
+  get safetyName(): string | undefined {
+    return this.roleHost("sis")?.name ?? this.site.ids.safety[0];
+  }
+
+  /** Live process values for the views. */
+  readouts(): Readout[] {
+    return this.plant.readouts((sig) => this.plant.get(sig), { safety: this.safetyName });
+  }
+
+  /** What the operator screen shows: values from the last successful poll. */
+  hmiReadouts(): Readout[] {
+    return this.plant.readouts((sig) => this.hmiValues[sig] ?? NaN, { safety: this.safetyName }).filter((r) => r.hmi);
   }
 
   // ------------------------------------------------------------ traffic
@@ -318,33 +309,11 @@ export class Sim {
     const now = new Set<string>();
     for (const a of this.plant.alarms()) {
       now.add(a.id);
-      if (!this.activeAlarms.has(a.id) && a.id !== "level-h" && a.id !== "level-l" && a.id !== "manual") {
-        this.raise({ severity: a.severity, title: a.text, detail: this.processDetail(a.id), source: "process" });
+      if (!this.activeAlarms.has(a.id) && !this.plant.quietAlarms.includes(a.id)) {
+        this.raise({ severity: a.severity, title: a.text, detail: this.plant.alarmDetail(a.id), source: "process" });
       }
     }
     this.activeAlarms = now;
-  }
-
-  private processDetail(id: string): string {
-    const p = this.tank;
-    if (!p) return "";
-    const pr = p.params;
-    switch (id) {
-      case "overflow":
-        return `The tank is full and the inlet pump keeps running. Auto mode: ${p.autoMode ? "on" : "off"}, safety bypass: ${p.bypassed ? "on" : "off"}, stop level ${p.stopSp / 10} %.`;
-      case "level-hh":
-        return `Level ${p.level.toFixed(1)} %. The safety system trips at ${p.tripSp / 10} %${p.bypassed ? ", but its trip is bypassed" : ""}.`;
-      case "sis-trip":
-        return `The safety system stopped inlet pump ${p.tags.pump} on high-high level. It resets when the level falls below ${pr.tripReset} %.`;
-      case "sis-bypass":
-        return "The high-high trip is bypassed. Nothing stops the tank from overflowing if the level control fails.";
-      case "cl-low":
-        return `Chlorine residual is ${p.chlorine.toFixed(2)} mg/L, below ${pr.chlorineLow} mg/L. Dosing ${p.dosingRunning ? "on" : "off"}, setpoint ${(p.chlorineSp / 100).toFixed(2)} mg/L.`;
-      case "cl-high":
-        return `Chlorine residual is ${p.chlorine.toFixed(2)} mg/L, above ${pr.chlorineHigh} mg/L. Setpoint ${(p.chlorineSp / 100).toFixed(2)} mg/L.`;
-      default:
-        return "";
-    }
   }
 
   raise(a: { severity: Severity; title: string; detail: string; src?: string; dst?: string; source: "ids" | "process" }): Alert {
@@ -373,27 +342,11 @@ export class Sim {
   }
 
   snapshot(): SimSnapshot {
-    const p = this.tank;
     return {
       t: this.t,
       site: { id: this.site.id, name: this.site.name },
-      plant: {
-        level: round(this.plant.get("level") / 10, 1),
-        chlorine: round(this.plant.get("chlorine") / 100, 2),
-        pumpRunning: this.plant.get("pump.running") === 1,
-        dosingRunning: this.plant.get("dosing.running") === 1,
-        autoMode: this.plant.get("control.auto") === 1,
-        sisTrip: this.plant.get("sis.tripped") === 1,
-        bypassed: this.plant.get("sis.bypassed") === 1,
-        overflowing: this.plant.get("alarm.overflow") === 1,
-        overflowSeconds: round(p?.overflowSeconds ?? 0, 1),
-        startLevel: this.plant.get("setpoint.start"),
-        stopLevel: this.plant.get("setpoint.stop"),
-        chlorineSetpoint: this.plant.get("setpoint.chlorine"),
-        tripLevel: this.plant.get("sis.trip_level"),
-        alarms: this.plant.alarms(),
-      },
-      hmi: { online: this.hmiOnline, view: this.hmiView, lastPlc: this.site.hmi ? this.hmiLast[this.site.hmi.device] ?? 0 : 0 },
+      plant: { model: this.plant.model, ...this.plant.snapshot(), alarms: this.plant.alarms() },
+      hmi: { online: this.hmiOnline, lastPlc: this.site.hmi ? this.hmiLast[this.site.hmi.device] ?? 0 : 0 },
       ...this.net.toJSON(),
       required: this.requiredFlows().map((f) => ({ id: f.flow.id, title: f.flow.title, ok: f.ok, reason: f.reason })),
       risks: this.risks(),
@@ -405,23 +358,8 @@ export class Sim {
 export interface SimSnapshot {
   t: number;
   site: { id: string; name: string };
-  plant: {
-    level: number;
-    chlorine: number;
-    pumpRunning: boolean;
-    dosingRunning: boolean;
-    autoMode: boolean;
-    sisTrip: boolean;
-    bypassed: boolean;
-    overflowing: boolean;
-    overflowSeconds: number;
-    startLevel: number;
-    stopLevel: number;
-    chlorineSetpoint: number;
-    tripLevel: number;
-    alarms: { id: string; text: string; severity: string }[];
-  };
-  hmi: { online: boolean; view: HmiView; lastPlc: number };
+  plant: { model: string; alarms: { id: string; text: string; severity: string }[] } & Record<string, unknown>;
+  hmi: { online: boolean; lastPlc: number };
   hosts: Host[];
   zones: Network["zones"];
   conduits: Network["conduits"];

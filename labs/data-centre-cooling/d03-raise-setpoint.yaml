@@ -1,0 +1,40 @@
+id: d03-raise-setpoint
+site: data-centre-cooling
+title: Raise the chilled water temperature to save energy
+level: beginner
+minutes: 8
+topic: Modbus basics
+intro: |
+  Warmer chilled water lets the chillers work less. The facilities manager
+  asks you to raise the chilled water setpoint by 2 °C, from
+  ${param.chwSetpoint} to ${param.chwSetpoint+2} °C, as long as the cold aisle
+  stays within the recommended range (up to ${param.recommendedMax} °C).
+  Operators do this from the BMS, which writes a holding register with
+  function code 6.
+tasks:
+  - From ${hmi}, set the chilled water setpoint (${plc} holding register ${plc:setpoint.chw}) to ${param.chwSetpoint+2} °C. The raw value is ${param.chwSetpoint*10+20}.
+  - Read the register back to confirm the controller took it.
+  - Run `wait 120`, then `plant`. The chilled water warms up, the cold aisle holds, and PUE drops a little.
+checks:
+  - name: The setpoint is ${param.chwSetpoint+2} °C (hr ${plc:setpoint.chw} = ${param.chwSetpoint*10+20})
+    register: { host: "${plc}", signal: setpoint.chw, equals: "${param.chwSetpoint*10+20}" }
+  - name: The chilled water followed the new setpoint
+    state: { path: plant.chwSupply, gte: "${param.chwSetpoint+1.5}" }
+  - name: The cold aisle stays within the recommended range
+    state: { path: plant.coldAisle, lte: "${param.recommendedMax}" }
+  - name: The IDS raised no alert, because ${hmi} is an expected writer
+    alert: { title: Unauthorized, exists: false }
+hints:
+  - "`modbus write ${plc} hr ${plc:setpoint.chw} ${param.chwSetpoint*10+20}` sends function code 6."
+  - "Run it on the BMS: `ssh ${hmi} modbus write ${plc} hr ${plc:setpoint.chw} ${param.chwSetpoint*10+20}`, then `wait 120`."
+solution:
+  - ssh ${hmi} modbus write ${plc} hr ${plc:setpoint.chw} ${param.chwSetpoint*10+20}
+  - ssh ${hmi} modbus read ${plc} hr ${plc:setpoint.chw}
+  - wait 120
+learned: |
+  The same function code 6 that saves energy here could push the hall out of
+  its safe range with a different number. The controller accepted it because
+  it was well formed. The IDS stayed quiet because ${hmi} normally writes to
+  ${plc}; from any other host this write would be an attack.
+refs:
+  - ASHRAE TC 9.9 Thermal Guidelines for Data Processing Environments

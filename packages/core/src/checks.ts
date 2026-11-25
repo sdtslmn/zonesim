@@ -117,20 +117,23 @@ export function riskChecks(net: Network, site: Site): RiskCheck[] {
       const fc = WRITE_FCS.find((f) => net.evaluate(hist, d, "modbus", f).delivered);
       if (fc !== undefined) bad = `${hist.name} can send function code ${fc} to ${d.name}`;
     }
-    out.push({ id: "historian-read-only", title: "The historian can only read the controllers", ok: !bad, detail: bad || `Modbus writes from ${hist.name} are blocked` });
+    out.push({ id: "historian-read-only", title: `${hist.name === "historian" ? "The historian" : hist.name} can only read the controllers`, ok: !bad, detail: bad || `Modbus writes from ${hist.name} are blocked` });
   }
 
-  // Remote access goes through the jump host, with MFA.
+  // Remote access from the internet ends in the DMZ, at a jump host with MFA.
   const vendor = role("vendor");
-  const ews = role("ews");
   const jump = role("jump");
-  if (vendor && ews && jump) {
-    const direct = net.evaluate(vendor, ews, "rdp").delivered || net.evaluate(vendor, ews, "ssh").delivered;
+  if (vendor && jump) {
+    let direct = "";
+    for (const d of hosts.filter((h) => h.level <= 3)) if (!direct) for (const svc of ["rdp", "ssh"] as ServiceName[]) if (d.services.includes(svc) && net.evaluate(vendor, d, svc).delivered) {
+      direct = `${vendor.name} reaches ${d.name} over ${svc} directly`;
+      break;
+    }
     out.push({
       id: "remote-access",
       title: `Remote access goes through ${jump.name} with MFA`,
       ok: !direct && jump.mfa,
-      detail: direct ? `${vendor.name} reaches ${ews.name} directly` : !jump.mfa ? `MFA is off on ${jump.name}` : `no direct path from the internet, MFA on at ${jump.name}`,
+      detail: direct || (!jump.mfa ? `MFA is off on ${jump.name}` : `no direct path from the internet, MFA on at ${jump.name}`),
     });
   }
 

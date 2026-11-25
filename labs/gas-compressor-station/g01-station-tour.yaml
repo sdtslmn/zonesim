@@ -1,0 +1,42 @@
+id: g01-station-tour
+site: gas-compressor-station
+title: Get to know the compressor station
+level: beginner
+minutes: 8
+topic: Asset inventory
+intro: |
+  You have just joined ${site.name} as its OT security engineer. The station
+  takes gas from the ${tag.source} at about ${param.suctionPressure} bar and
+  pushes it into the ${tag.consumer} at about ${param.setpoint} bar. Before you
+  change anything, find out what is there.
+
+  You are on the console, an out-of-band management station. It sends no
+  traffic on the station network. To act from a host, log in to it with ssh,
+  or run one command there with `ssh HOST COMMAND`.
+tasks:
+  - Run `hosts`. Which three hosts are controllers? Which hosts are not at the station at all?
+  - Run `plant` and `hmi` to see the compressor, the anti-surge valve, the safety system and what the operator sees.
+  - "Ask the flow computer for its vendor, model and firmware from the engineering workstation: `ssh ${ews} modbus info ${meter}`."
+  - Write the flow computer firmware version into firmware.txt.
+  - Write the IP address of the emergency shutdown system ${sis} into esd-ip.txt.
+checks:
+  - name: firmware.txt holds the flow computer firmware version
+    file: { path: firmware.txt, matches: '${meter.firmware}' }
+  - name: esd-ip.txt holds the IP address of ${sis}
+    file: { path: esd-ip.txt, matches: '${sis.ip}' }
+hints:
+  - "`hosts -o wide` adds each host's role and operating system. The control centre and the compressor maker are remote."
+  - "`modbus info ${meter}` reads the device identification (function code 43). Look for MajorMinorRevision."
+  - "`echo ${meter.firmware} > firmware.txt` writes a file, `cat firmware.txt` shows it."
+solution:
+  - ssh ${ews} modbus info ${meter}
+  - echo ${meter.firmware} > firmware.txt
+  - echo ${sis.ip} > esd-ip.txt
+learned: |
+  The inventory of a pipeline station reaches well beyond its fence: the
+  control centre that runs it over the WAN and the compressor maker who
+  supports it from the internet are part of the system. The flow computer
+  matters in a different way: it measures the gas the company is paid for.
+refs:
+  - IEC 62443-2-1 (asset inventory)
+  - API 1164 (pipeline control systems cybersecurity)

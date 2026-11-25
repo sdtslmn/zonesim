@@ -44,10 +44,10 @@ then reads "set the pump stop level (tank-plc holding register 1) to 70 %".
 
 ## How a site file works
 
-- `extends` names a built-in site to start from: `riverside-water` (the
-  flat plant as found) or `riverside-segmented` (the same plant with a
-  finished zone and conduit design). A site file without `extends` must
-  describe everything.
+- `extends` names a built-in site to start from: `riverside-water`,
+  `gas-compressor-station` or `data-centre-cooling` (each plant as found), or
+  `riverside-segmented` (Riverside with a finished zone and conduit design).
+  A site file without `extends` must describe everything.
 - `rename` renames hosts or zones. Every reference is updated for you:
   zones, firewall rules, Modbus devices, data flows and the IDS baseline.
 - Lists are merged by name (hosts, zones, conduits) or id (flows). An item
@@ -64,7 +64,7 @@ then reads "set the pump stop level (tank-plc holding register 1) to 70 %".
 | `hosts` | name, role, IP address, Purdue level (5, 4, 3.5, 3, 2, 1, 0), kind (`external`, `it`, `dmz`, `ot`), services, OS, login user, description |
 | `zones` | the zones as found, with the hosts in each. Most plants start with one flat zone |
 | `conduits` | conduits as found, with rules such as `allow from vendor-laptop to ews-01 rdp` |
-| `process` | the process model (`water-tank`), tag names, and parameters such as levels, flow rates and alarm limits |
+| `process` | the process model (`water-tank`, `gas-compressor` or `dc-cooling`), tag names, and parameters such as levels, pressures, temperatures and alarm limits |
 | `devices` | Modbus controllers: vendor, product, firmware, and the point map |
 | `hmi` | which host is the HMI, which controller it shows, and when it reports a communication failure |
 | `polling` | traffic the plant sends by itself, and how often |
@@ -90,7 +90,10 @@ rename things. The labs use these roles:
 | `office` | corp-pc, an office workstation |
 | `vendor` | vendor-laptop, the remote vendor |
 
-Each role names one host. Hosts you add can have their own roles or none.
+The other plants add a few: `control-centre` (the pipeline control centre at
+the compressor station), `meter` (the flow computer, or the power meter
+gateway in the data centre) and `customer` (a colocation customer). Each
+role names one host. Hosts you add can have their own roles or none.
 
 ## The Modbus map
 
@@ -99,7 +102,11 @@ signal: writable on/off signals are coils, writable numbers are holding
 registers, read-only on/off signals are discrete inputs, read-only numbers
 are input registers. ZoneSim tells you if a point is in the wrong table.
 
-Signals of the water tank model:
+`modbus map HOST` in the simulator lists a controller's points, and the
+JSON Schema lists every signal. The signals of each model:
+
+### Water tank (`water-tank`)
+
 
 | Signal | Table | Meaning |
 | --- | --- | --- |
@@ -116,12 +123,42 @@ Signals of the water tank model:
 | `setpoint.chlorine` | hr | chlorine setpoint, hundredths of mg/L |
 | `sis.trip_level` | hr | safety trip level, tenths of a % |
 
+### Gas compressor (`gas-compressor`)
+
+| Signal | Table | Meaning |
+| --- | --- | --- |
+| `compressor.run`, `control.auto`, `antisurge.auto`, `sis.bypass` | coil | run command, auto speed, auto anti-surge, trip bypass |
+| `compressor.running`, `alarm.surge`, `alarm.high_pressure`, `alarm.venting` | di | compressor and alarm states |
+| `sis.tripped`, `sis.bypassed`, `valve.esd_closed` | di | ESD state |
+| `pressure.suction`, `pressure.discharge`, `sis.pressure` | ir | pressures, tenths of a bar |
+| `speed`, `recycle` | ir | speed and recycle valve position, tenths of a % |
+| `flow`, `meter.flow` | ir | station flow and metered flow, thousand Sm³/h |
+| `surge.margin` | ir | distance from surge, % |
+| `setpoint.discharge`, `sis.trip_pressure` | hr | tenths of a bar |
+| `setpoint.speed`, `setpoint.recycle` | hr | manual speed and valve position, tenths of a % |
+| `meter.factor` | hr | flow computer meter factor, 10000 = 1.0000 |
+
+### Data centre cooling (`dc-cooling`)
+
+| Signal | Table | Meaning |
+| --- | --- | --- |
+| `chiller1.enable`, `chiller2.enable`, `pump.run`, `control.auto` | coil | chillers available, pumps, auto sequencing |
+| `fire.isolate`, `fire.release` | coil | isolate the suppression, manual release |
+| `chiller1.running`, `chiller2.running`, `pump.running` | di | plant states |
+| `alarm.high_temp`, `alarm.critical_temp` | di | above the recommended or allowable range |
+| `fire.isolated`, `fire.alarm`, `fire.discharged` | di | fire panel states |
+| `temp.cold_aisle`, `temp.chw_supply`, `fire.temp` | ir | temperatures, tenths of a °C |
+| `load.it`, `power.cooling` | ir | kW |
+| `pue` | ir | hundredths, 135 = 1.35 |
+| `setpoint.chw`, `setpoint.supply_air` | hr | tenths of a °C |
+
 ## Which labs run on my site
 
-A lab runs on your site when your site extends the lab's site, has every
+A lab runs on your site when your site extends the lab's plant, has every
 role the lab uses, and the lab's own solution still solves it on your
-plant. The Site tab shows the result for each lab. A lab that does not fit
-runs on the plant it was written for, and says so.
+plant. The Site tab shows the result for each lab of that plant. A lab that
+does not fit runs on the plant it was written for, and says so. Labs of the
+other plants always run on their own plant.
 
 For example, if you remove the jump host, the labs that use it run on
 Riverside instead.
