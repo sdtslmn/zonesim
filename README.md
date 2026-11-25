@@ -158,8 +158,9 @@ alerts, but sends no plant traffic. To act from a host, `ssh` to it. Type
 
 Labs, Help and Site are on the left. The network map and the plant view are
 on the top right, with a status strip. The terminal is docked at the bottom:
-drag its edge to resize it, or fold it away. On a phone the panels stack
-behind a tab bar.
+drag its edge to resize it, or fold it away. The **Site** button in the top
+bar switches plant in one click, and **Home** brings you back to the start
+page. On a phone the panels stack behind a tab bar.
 
 ## Run it on your computer
 

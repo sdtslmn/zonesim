@@ -6,7 +6,7 @@ import "@xterm/xterm/css/xterm.css";
 import "./style.css";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { Trainer, parseLab, sortLabs, findLab, builtinSite, loadSiteFile, VERSION, C, DEFAULT_SITE, type Lab, type Site } from "@zonesim/core";
+import { Trainer, parseLab, sortLabs, findLab, builtinSite, loadSiteFile, siteCompatible, VERSION, C, DEFAULT_SITE, type Lab, type Site } from "@zonesim/core";
 import { LineEditor } from "./line-editor";
 import { NetworkMap } from "./map";
 import { plantPanel, statusStrip } from "./plant";
@@ -227,6 +227,29 @@ const PLANT_KIND: Record<string, string> = {
   "data-centre-cooling": "data centre",
 };
 
+/** Built-in sites in the order people see them. */
+const SITE_ORDER = ["riverside-water", "riverside-segmented", "gas-compressor-station", "data-centre-cooling"];
+
+/** A short description of a site for menus: its plant, and whether it is a built-in. */
+function siteKind(site: Site): string {
+  if (site.id === "riverside-segmented") return "drinking water, finished design";
+  const plant = [site.id, ...site.extends].find((x) => PLANT_KIND[x]);
+  const kind = plant ? PLANT_KIND[plant] : site.process.model;
+  return isBuiltin(site.id) ? kind : `yours, ${kind}`;
+}
+
+function sortedSites() {
+  const rank = (id: string) => SITE_ORDER.indexOf(id) + 1 || SITE_ORDER.length + 1;
+  return listSites().sort((a, b) => Number(!a.builtin) - Number(!b.builtin) || rank(a.id) - rank(b.id));
+}
+
+/** A site by id: a built-in, or one saved in this browser. */
+function siteById(id: string): Site | undefined {
+  if (isBuiltin(id)) return builtinSite(id);
+  const text = siteText(id);
+  return text ? loadSiteFile(text).site : undefined;
+}
+
 /** Open the plant group of the lab or site in use. */
 function openCurrentPlant(): void {
   const id = trainer.lab?.site ?? (trainer.session ? [trainer.sim.site.id, ...trainer.sim.site.extends].find((x) => PLANT_KIND[x]) : undefined) ?? "riverside-water";
@@ -416,9 +439,7 @@ function sitePanel(): string {
     if (bad.length > 3) labsHtml += `<details class="why"><summary>Why the other ${bad.length} do not fit</summary>${rows}</details>`;
     else if (bad.length) labsHtml += rows;
   }
-  const order = ["riverside-water", "riverside-segmented", "gas-compressor-station", "data-centre-cooling"];
-  const rank = (id: string) => (order.indexOf(id) + 1 || order.length + 1);
-  const entries = listSites().sort((a, b) => Number(!a.builtin) - Number(!b.builtin) || rank(a.id) - rank(b.id));
+  const entries = sortedSites();
   const running = trainer.session ? trainer.sim.site : site;
   const elsewhere = running.id !== site.id ? `<div class="notice info">The current lab runs on ${esc(running.name)}. The site you choose here is for the sandbox and for the labs written for its plant.</div>` : "";
   const rows = entries
@@ -525,7 +546,10 @@ async function openSandbox(): Promise<void> {
   setQuery({ lab: null, sandbox: "" });
 }
 
-/** Switch to a site: find which labs fit it, then restart the current lab or the sandbox. */
+/**
+ * Switch to a site: find which of its plant's labs fit it, then restart the
+ * current lab on it if the lab belongs to that plant, or open the sandbox.
+ */
 async function useSite(site: Site): Promise<void> {
   if (busy) return;
   busy = true;
@@ -537,15 +561,138 @@ async function useSite(site: Site): Promise<void> {
   if (site.id !== DEFAULT_SITE) await trainer.checkLabs();
   state.checking = false;
   term.write(`\n${C.bold(`Site: ${site.name}`)}\n`);
-  if (trainer.lab) await trainer.startLab(trainer.lab);
-  else await trainer.startSandbox();
+  state.openPlants.clear();
+  const keepLab = trainer.lab && siteCompatible(site, trainer.lab.site);
+  if (keepLab) await trainer.startLab(trainer.lab!);
+  else {
+    await trainer.startSandbox(false);
+    term.write(welcome());
+    state.labView = "list";
+  }
   busy = false;
   map.unmount();
   renderSide();
   renderView();
   editor.showPrompt();
-  setQuery({ site: null });
+  setQuery({ site: isBuiltin(site.id) && site.id !== DEFAULT_SITE ? site.id : null, lab: keepLab ? trainer.lab!.id.split("-")[0] : null, sandbox: null });
 }
+
+/** The line printed on the start page. */
+function welcome(): string {
+  return `You are on the ${C.bold("console")} of ${C.bold(trainer.site.name)}. Pick a lab on the left, or explore: try ${C.cyan("plant")}, ${C.cyan("hosts")} and ${C.cyan("help")}.\n\n`;
+}
+
+/** Back to the start page: the lab list and the sandbox on the chosen site, with a fresh terminal. */
+async function goHome(): Promise<void> {
+  closeSiteMenu();
+  if (busy) return;
+  busy = true;
+  term.clear();
+  term.write(`\r\x1b[2K${C.bold(`ZoneSim ${VERSION}`)}  OT/ICS security training simulator\n${C.gray("A simulated plant. Nothing real is touched.")}\n\n`);
+  await trainer.startSandbox(false);
+  term.write(welcome());
+  busy = false;
+  state.left = "labs";
+  state.labView = "list";
+  state.right = "map";
+  state.pane = "left";
+  state.siteMsg = undefined;
+  state.openPlants.clear();
+  map.unmount();
+  renderSide();
+  panel.scrollTop = 0;
+  renderView();
+  editor.showPrompt();
+  setQuery({ lab: null, sandbox: null });
+  if (!mobile.matches) term.focus();
+}
+
+// ---------------------------------------------------------------- site menu
+
+const siteMenu = $("site-menu");
+const siteChip = $("site-chip");
+
+function siteMenuHtml(): string {
+  const running = trainer.session ? trainer.sim.site.id : trainer.site.id;
+  const item = (id: string, name: string, kind: string) =>
+    `<button class="menu-item${id === running ? " current" : ""}" role="menuitemradio" aria-checked="${id === running}" data-site="${esc(id)}"><span class="check" aria-hidden="true">${id === running ? "✓" : ""}</span><span><span class="menu-name">${esc(name)}</span><span class="meta">${esc(kind)}</span></span></button>`;
+  const entries = sortedSites();
+  const builtins = entries.filter((e) => e.builtin);
+  const yours = entries.filter((e) => !e.builtin);
+  const kindOf = (id: string) => {
+    const site = siteById(id);
+    return site ? siteKind(site) : "has problems, open the Site tab";
+  };
+  return `<div class="menu-label">Plants</div>${builtins.map((e) => item(e.id, e.name, kindOf(e.id))).join("")}
+  ${yours.length ? `<div class="menu-label">Your sites</div>${yours.map((e) => item(e.id, e.name, kindOf(e.id))).join("")}` : ""}
+  <div class="menu-sep" role="separator"></div>
+  <button class="menu-item plain" role="menuitem" data-menu="load"><span class="check" aria-hidden="true">+</span><span class="menu-name">Load your own site</span></button>
+  <button class="menu-item plain" role="menuitem" data-menu="manage"><span class="check" aria-hidden="true"></span><span class="menu-name">Manage sites</span></button>`;
+}
+
+function openSiteMenu(): void {
+  siteMenu.innerHTML = siteMenuHtml();
+  siteMenu.hidden = false;
+  siteChip.setAttribute("aria-expanded", "true");
+  (siteMenu.querySelector<HTMLElement>(".menu-item.current") ?? siteMenu.querySelector<HTMLElement>(".menu-item"))?.focus();
+}
+
+function closeSiteMenu(focusChip = false): void {
+  if (siteMenu.hidden) return;
+  siteMenu.hidden = true;
+  siteChip.setAttribute("aria-expanded", "false");
+  if (focusChip) siteChip.focus();
+}
+
+siteChip.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (siteMenu.hidden) openSiteMenu();
+  else closeSiteMenu();
+});
+
+siteMenu.addEventListener("click", (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLElement>("[data-site],[data-menu]");
+  if (!el) return;
+  closeSiteMenu();
+  if (el.dataset.site) {
+    const site = siteById(el.dataset.site);
+    if (!site) {
+      showSiteMessage("error", `Site ${esc(el.dataset.site)} no longer loads. Edit it to see why.`);
+      return;
+    }
+    state.siteMsg = undefined;
+    if (mobile.matches) state.pane = "right";
+    void useSite(site);
+  } else if (el.dataset.menu === "load") {
+    state.left = "site";
+    state.pane = "left";
+    renderSide();
+    panel.querySelector("#site-file")?.closest(".actions")?.scrollIntoView({ block: "center" });
+  } else {
+    selectTab("site");
+    panel.scrollTop = 0;
+  }
+});
+
+siteMenu.addEventListener("keydown", (e) => {
+  const items = [...siteMenu.querySelectorAll<HTMLElement>(".menu-item")];
+  const i = items.indexOf(document.activeElement as HTMLElement);
+  if (e.key === "Escape") {
+    e.preventDefault();
+    closeSiteMenu(true);
+  } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    const next = e.key === "ArrowDown" ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
+    items[next]?.focus();
+  } else if (e.key === "Home" || e.key === "End") {
+    e.preventDefault();
+    items[e.key === "Home" ? 0 : items.length - 1]?.focus();
+  } else if (e.key === "Tab") closeSiteMenu();
+});
+
+document.addEventListener("click", (e) => {
+  if (!(e.target as HTMLElement).closest("#site-menu-wrap")) closeSiteMenu();
+});
 
 function showSiteMessage(kind: "error" | "success" | "info", html: string): void {
   state.siteMsg = { kind, html };
@@ -632,11 +779,9 @@ async function siteAction(action: string, id?: string): Promise<void> {
       return openSandbox();
     case "explore-site": {
       if (!id || busy) return;
-      const site = builtinSite(id);
-      trainer.setSite(site);
-      setActiveSite(site.id);
-      if (site.id !== DEFAULT_SITE) await trainer.checkLabs();
-      return openSandbox();
+      trainer.lab = undefined;
+      if (mobile.matches) state.pane = "right";
+      return useSite(builtinSite(id));
     }
     case "all-labs":
       state.labView = "list";
@@ -689,8 +834,12 @@ async function siteAction(action: string, id?: string): Promise<void> {
   }
 }
 
-$("nav-sandbox").addEventListener("click", () => void openSandbox());
-$("site-chip").addEventListener("click", () => selectTab("site"));
+$("nav-home").addEventListener("click", () => void goHome());
+$("brand").addEventListener("click", (e) => {
+  if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+  e.preventDefault();
+  void goHome();
+});
 ($("nav-repo") as HTMLAnchorElement).href = REPO_URL;
 mobile.addEventListener("change", () => {
   renderTabs();
@@ -736,7 +885,7 @@ void (async () => {
     state.labView = "lab";
   } else {
     await trainer.startSandbox(false);
-    term.write(`You are on the ${C.bold("console")} of ${C.bold(trainer.site.name)}. Pick a lab on the left, or explore: try ${C.cyan("plant")}, ${C.cyan("hosts")} and ${C.cyan("help")}.\n\n`);
+    term.write(welcome());
   }
   if (params.has("sandbox")) state.right = "map";
   renderSide();

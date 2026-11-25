@@ -49,6 +49,14 @@ a {
   font-weight: 600;
   font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
   color: var(--accent);
+  text-decoration: none;
+  border-radius: 6px;
+  padding: 4px 6px;
+  margin-left: -6px;
+}
+
+.brand:hover {
+  background: var(--accent-soft);
 }
 
 .brand .tag {
@@ -80,6 +88,98 @@ nav {
 .link:hover,
 .link.active {
   background: var(--accent-soft);
+}
+
+/* ---------------------------------------------------------------- site menu */
+
+.site-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.site-chip::after {
+  content: " ▾";
+  font-size: 11px;
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 50;
+  min-width: 300px;
+  max-height: min(70vh, 520px);
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+  padding: 6px;
+}
+
+.menu[hidden] {
+  display: none;
+}
+
+.menu-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 8px 10px 4px;
+}
+
+.menu-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--accent-soft);
+  outline: none;
+}
+
+.menu-item .check {
+  width: 14px;
+  flex: none;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.menu-item .menu-name {
+  display: block;
+}
+
+.menu-item .meta {
+  display: block;
+  font-size: 12px;
+}
+
+.menu-item.current .menu-name {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.menu-item.plain {
+  color: var(--accent);
+}
+
+.menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 4px;
 }
 
 /* ---------------------------------------------------------------- layout
@@ -1278,7 +1378,19 @@ details.why summary,
   }
 
   .site-chip {
-    max-width: 150px;
+    max-width: 170px;
+  }
+
+  .repo-link {
+    display: none;
+  }
+
+  .menu {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    top: 52px;
+    min-width: 0;
   }
 
   .side-body,

@@ -28,6 +28,10 @@ Nothing leaves your browser and nothing real is touched.
   shorter, or fold it away with the arrow button. ZoneSim remembers your
   layout.
 
+- **Top bar**: the **Site** button opens a menu to switch plant in one
+  click, or load your own site. **Home** (or the ZoneSim name) takes you
+  back to the start page: the lab list and a fresh console on your plant.
+
 On a phone the panels stack, with a tab bar at the top.
 
 ## Your first five minutes

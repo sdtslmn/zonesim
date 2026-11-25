@@ -12,11 +12,14 @@
   </head>
   <body>
     <header class="topbar">
-      <div class="brand">ZoneSim <span class="tag">simulated plant, nothing real is touched</span></div>
+      <a class="brand" id="brand" href="./" title="Back to the start page">ZoneSim <span class="tag">simulated plant, nothing real is touched</span></a>
       <nav>
-        <button id="site-chip" class="link site-chip" title="The plant you are working on. Click to change it.">Site</button>
-        <button id="nav-sandbox" class="link">Sandbox</button>
-        <a id="nav-repo" class="link" href="https://github.com/sdtslmn/zonesim" target="_blank" rel="noopener">GitHub</a>
+        <div class="site-menu" id="site-menu-wrap">
+          <button id="site-chip" class="link site-chip" aria-haspopup="menu" aria-expanded="false" aria-controls="site-menu" title="Change the plant">Site</button>
+          <div class="menu" id="site-menu" role="menu" aria-label="Change the plant" hidden></div>
+        </div>
+        <button id="nav-home" class="link" title="Back to the start page">Home</button>
+        <a id="nav-repo" class="link repo-link" href="https://github.com/sdtslmn/zonesim" target="_blank" rel="noopener">GitHub</a>
       </nav>
     </header>
     <nav class="mobile-tabs" aria-label="Panels">
