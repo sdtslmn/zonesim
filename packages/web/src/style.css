@@ -1372,6 +1372,703 @@ details.why summary,
 
 /* ---------------------------------------------------------------- phones */
 
+/* ---------------------------------------------------------------- HMI
+   High-performance style: grey and calm, colour only for alarms, dark for
+   running equipment, magenta for values the HMI cannot trust. */
+
+.hmi {
+  --h-bg: #d6d7d9;
+  --h-panel: #e7e8ea;
+  --h-line: #6b6f75;
+  --h-text: #1d1f22;
+  --h-muted: #5b6068;
+  --h-run: #4a4e54;
+  --h-stale: #b0129c;
+  --h-p1: #d0302f;
+  --h-p2: #f0a500;
+  --h-p3: #3b78d8;
+  background: var(--h-bg);
+  border: 1px solid #b9bcc1;
+  border-radius: 6px;
+  color: var(--h-text);
+  font-size: 13px;
+  overflow: hidden;
+}
+
+.hmi-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 6px 10px;
+  background: #c5c7cb;
+  border-bottom: 1px solid #b0b3b8;
+}
+
+.hmi-title {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  white-space: nowrap;
+}
+
+.hmi-navs {
+  display: flex;
+  gap: 4px;
+}
+
+.hmi-nav {
+  font: inherit;
+  padding: 3px 10px;
+  border: 1px solid #9ea2a8;
+  border-radius: 3px;
+  background: var(--h-panel);
+  color: var(--h-text);
+  cursor: pointer;
+}
+
+.hmi-nav.active {
+  background: #fff;
+  border-color: var(--h-line);
+  font-weight: 600;
+}
+
+.hmi-nav.unacked {
+  box-shadow: inset 0 -3px 0 var(--h-p1);
+}
+
+.hmi-comms {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.hmi-comm {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid #9ea2a8;
+  border-radius: 3px;
+  background: var(--h-panel);
+}
+
+.hmi-comm.fail {
+  border-color: var(--h-stale);
+  color: var(--h-stale);
+  font-weight: 700;
+}
+
+.hmi-clock {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
+.hmi-main {
+  display: flex;
+  align-items: stretch;
+  min-height: 0;
+}
+
+.hmi-screen {
+  flex: 1;
+  min-width: 0;
+  padding: 8px;
+}
+
+.hmi-face {
+  flex: none;
+  width: 290px;
+  background: var(--h-panel);
+  border-left: 1px solid #b0b3b8;
+  padding: 10px 12px;
+}
+
+.hmi-svg {
+  display: block;
+  max-height: 440px;
+}
+
+.hmi-svg text {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.hmi-svg .h-pipe {
+  fill: none;
+  stroke: var(--h-line);
+  stroke-width: 4;
+}
+
+.hmi-svg .h-pipe.thin {
+  stroke-width: 2.5;
+}
+
+.hmi-svg .h-pipe.dashed {
+  stroke-dasharray: 6 4;
+}
+
+.hmi-svg .h-pipe.air {
+  stroke-width: 3;
+  stroke-dasharray: 3 4;
+}
+
+.hmi-svg .h-pipe.flow {
+  stroke: #3f4348;
+}
+
+.hmi-svg .h-label {
+  font-size: 12px;
+  fill: var(--h-text);
+}
+
+.hmi-svg .h-small {
+  font-size: 10px;
+  fill: var(--h-muted);
+  letter-spacing: 0.03em;
+}
+
+.hmi-svg .h-small.trip {
+  fill: var(--h-text);
+}
+
+.hmi-svg .h-tag {
+  font-size: 9px;
+  fill: var(--h-muted);
+  letter-spacing: 0.04em;
+}
+
+.hmi-svg .h-tagname {
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--h-text);
+}
+
+.hmi-svg .inv {
+  fill: #f2f2f2;
+}
+
+.hmi-svg .h-state {
+  font-size: 10px;
+  font-weight: 600;
+  fill: var(--h-muted);
+  letter-spacing: 0.06em;
+}
+
+.hmi-svg .h-state.bad {
+  fill: var(--h-p1);
+}
+
+.hmi-svg .h-state.inv {
+  fill: #f2f2f2;
+}
+
+.hmi-svg .hv {
+  fill: #fff;
+  stroke: #858a91;
+  stroke-width: 1;
+}
+
+.hmi-svg .hv.alarm {
+  stroke: var(--h-p1);
+  stroke-width: 2;
+}
+
+.hmi-svg .hv.stale {
+  stroke: var(--h-stale);
+  stroke-width: 2;
+  stroke-dasharray: 3 2;
+}
+
+.hmi-svg .hv.none {
+  fill: #e4e5e7;
+}
+
+.hmi-svg .h-val {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  fill: #10233f;
+}
+
+.hmi-svg .h-val.stale {
+  fill: var(--h-stale);
+}
+
+.hmi-svg .h-unit {
+  font-size: 10px;
+  fill: var(--h-muted);
+}
+
+.hmi-svg .h-vessel {
+  fill: #eceef0;
+  stroke: var(--h-line);
+  stroke-width: 2;
+}
+
+.hmi-svg .h-vessel.bad {
+  stroke: var(--h-p1);
+}
+
+.hmi-svg .h-fill {
+  fill: #9eabb8;
+}
+
+.hmi-svg .h-fill.stale {
+  fill: #c9a8c4;
+}
+
+.hmi-svg .h-mark {
+  stroke: var(--h-line);
+  stroke-width: 1.5;
+}
+
+.hmi-svg .h-mark.trip {
+  stroke: var(--h-text);
+  stroke-dasharray: 2 2;
+}
+
+.hmi-svg .h-pump circle {
+  fill: #f2f3f4;
+  stroke: var(--h-run);
+  stroke-width: 2;
+}
+
+.hmi-svg .h-pump path {
+  fill: none;
+  stroke: var(--h-run);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.hmi-svg .h-pump.run circle {
+  fill: var(--h-run);
+}
+
+.hmi-svg .h-pump.run path {
+  fill: #f2f3f4;
+  stroke: #f2f3f4;
+}
+
+.hmi-svg .h-pump.stale circle {
+  stroke: var(--h-stale);
+}
+
+.hmi-svg .h-machine {
+  fill: #f2f3f4;
+  stroke: var(--h-run);
+  stroke-width: 2;
+}
+
+.hmi-svg .h-machine.run {
+  fill: var(--h-run);
+}
+
+.hmi-svg .h-machine.stale {
+  stroke: var(--h-stale);
+  stroke-dasharray: 4 3;
+}
+
+.hmi-svg .h-valve {
+  fill: #f2f3f4;
+  stroke: var(--h-run);
+  stroke-width: 2;
+}
+
+.hmi-svg .h-valve.closed {
+  fill: var(--h-run);
+}
+
+.hmi-svg .h-psv {
+  fill: #f2f3f4;
+  stroke: var(--h-run);
+  stroke-width: 2;
+}
+
+.hmi-svg .h-psv.bad {
+  fill: var(--h-p1);
+}
+
+.hmi-svg .h-panel {
+  fill: var(--h-panel);
+  stroke: #8f949a;
+  stroke-width: 1.2;
+}
+
+.hmi-svg .h-panel.bad {
+  stroke: var(--h-p1);
+  stroke-width: 2;
+}
+
+.hmi-svg .h-obj {
+  cursor: pointer;
+  outline: none;
+}
+
+.hmi-svg .h-hit {
+  fill: transparent;
+  stroke: transparent;
+}
+
+.hmi-svg .h-obj:hover .h-hit,
+.hmi-svg .h-obj:focus-visible .h-hit {
+  stroke: #7d8fa3;
+  stroke-dasharray: 4 3;
+  stroke-width: 1.5;
+}
+
+.hmi-svg .h-obj.sel .h-hit {
+  stroke: #2c5d9a;
+  stroke-width: 2;
+  stroke-dasharray: none;
+  fill: rgba(44, 93, 154, 0.06);
+}
+
+.hmi-svg .h-alm rect,
+.hmi-svg .h-alm path,
+.hmi-svg .h-alm circle {
+  stroke: #1d1f22;
+  stroke-width: 1;
+}
+
+.hmi-svg .h-alm.p1 rect {
+  fill: var(--h-p1);
+}
+
+.hmi-svg .h-alm.p2 path {
+  fill: var(--h-p2);
+}
+
+.hmi-svg .h-alm.p3 circle {
+  fill: var(--h-p3);
+}
+
+.hmi-svg .h-alm text {
+  font-size: 10px;
+  font-weight: 700;
+  fill: #fff;
+}
+
+.hmi-svg .h-alm.p2 text {
+  fill: #1d1f22;
+}
+
+.hmi-svg .h-alm.blink,
+.h-prio.blink {
+  animation: h-blink 1s steps(2, start) infinite;
+}
+
+@keyframes h-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hmi-svg .h-alm.blink,
+  .h-prio.blink {
+    animation: none;
+  }
+}
+
+.h-face-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #c3c6cb;
+}
+
+.h-face-head b {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
+.hmi-x {
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--h-muted);
+}
+
+.h-rows {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 8px;
+}
+
+.h-rows th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--h-muted);
+  padding: 2px 6px 2px 0;
+  width: 46%;
+}
+
+.h-rows td {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  padding: 2px 0;
+}
+
+.h-rows td.bad {
+  color: var(--h-p1);
+  font-weight: 700;
+}
+
+.h-rows td.stale {
+  color: var(--h-stale);
+}
+
+.h-ctl {
+  padding: 8px 0;
+  border-top: 1px solid #d0d3d7;
+}
+
+.h-ctl-label {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.h-range {
+  font-weight: 400;
+  color: var(--h-muted);
+  font-size: 11px;
+}
+
+.h-ctl-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.h-ctl-btns input {
+  font: inherit;
+  width: 80px;
+  padding: 4px 6px;
+  border: 1px solid #8f949a;
+  border-radius: 3px;
+  background: #fff;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
+.h-unit-text {
+  color: var(--h-muted);
+}
+
+.hmi-btn {
+  font: inherit;
+  padding: 5px 12px;
+  border: 1px solid #8f949a;
+  border-radius: 3px;
+  background: #f4f5f6;
+  color: var(--h-text);
+  cursor: pointer;
+}
+
+.hmi-btn:hover:not(:disabled) {
+  border-color: #2c5d9a;
+}
+
+.hmi-btn.current {
+  background: var(--h-run);
+  border-color: var(--h-run);
+  color: #fff;
+}
+
+.hmi-btn.danger {
+  border-color: var(--h-p1);
+  color: var(--h-p1);
+  font-weight: 600;
+}
+
+.hmi-btn.small {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.hmi-btn:disabled,
+.h-ctl-btns input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hmi-link {
+  font: inherit;
+  font-size: 12px;
+  border: none;
+  background: none;
+  color: #2c5d9a;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.h-why {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--h-muted);
+}
+
+.h-confirm {
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid var(--h-p1);
+  border-radius: 3px;
+  background: #fff;
+}
+
+.h-confirm p {
+  margin: 0 0 6px;
+}
+
+.h-confirm .hmi-btn {
+  margin-right: 6px;
+}
+
+.h-msg {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 3px;
+  background: #fff;
+  border: 1px solid #c3c6cb;
+  font-size: 12px;
+}
+
+.h-msg.bad {
+  border-color: var(--h-p1);
+}
+
+.h-msg.bad b {
+  color: var(--h-p1);
+}
+
+.h-detail {
+  color: var(--h-muted);
+  font-size: 11px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  word-break: break-word;
+}
+
+.h-hint {
+  color: var(--h-muted);
+  font-size: 12px;
+  margin: 8px 0 0;
+}
+
+.h-face-empty p {
+  margin: 0 0 8px;
+}
+
+.h-empty {
+  color: var(--h-muted);
+  padding: 20px 8px;
+}
+
+.hmi-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.hmi-table th,
+.hmi-table td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid #d5d8dc;
+  vertical-align: top;
+}
+
+.hmi-table th {
+  background: var(--h-panel);
+  font-weight: 600;
+}
+
+.hmi-table tr.acked td {
+  color: var(--h-muted);
+}
+
+.hmi-table tr.failed td:nth-child(3) {
+  color: var(--h-p1);
+  font-weight: 600;
+}
+
+.h-prio {
+  display: inline-block;
+  min-width: 18px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  border-radius: 2px;
+  padding: 0 4px;
+}
+
+.h-prio.p1 {
+  background: var(--h-p1);
+}
+
+.h-prio.p2 {
+  background: var(--h-p2);
+  color: #1d1f22;
+}
+
+.h-prio.p3 {
+  background: var(--h-p3);
+}
+
+.hmi-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: #c5c7cb;
+  border-top: 1px solid #b0b3b8;
+  min-height: 34px;
+}
+
+.h-quiet {
+  color: var(--h-muted);
+}
+
+.h-banner-list {
+  flex: 1;
+  min-width: 0;
+}
+
+.h-banner-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 1px 0;
+}
+
+.h-banner-row.acked .h-text {
+  color: var(--h-muted);
+}
+
+.h-time {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  color: var(--h-muted);
+}
+
+.h-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.h-banner-side {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.hmi-foot {
+  margin: 8px 2px 0;
+}
+
 /* ---------------------------------------------------------------- jobs */
 
 .jobbar {
@@ -1617,5 +2314,19 @@ details.why summary,
 
   .app[data-pane="left"] .jobbar {
     display: none;
+  }
+
+  .hmi-main {
+    flex-direction: column;
+  }
+
+  .hmi-face {
+    width: auto;
+    border-left: none;
+    border-top: 1px solid #b0b3b8;
+  }
+
+  .hmi-comms {
+    margin-left: 0;
   }
 }

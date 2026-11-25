@@ -3,6 +3,21 @@
 ZoneSim is being reworked around jobs: the people who work on a plant. Each
 release adds one of them.
 
+## In 0.4
+
+- An HMI screen for each plant, in the high-performance HMI style: grey and
+  calm, dark for running equipment, colour only for alarms, magenta for
+  stale values
+- Click equipment to open its faceplate: start and stop, auto and manual,
+  setpoints with safe ranges, confirmations for commands that can hurt the
+  plant. Safety systems are shown but read-only
+- The HMI shows what the HMI host last read, and every command is a Modbus
+  write from the HMI host through the firewall. When the network blocks it,
+  the screen goes stale and commands get no response
+- Alarms with priorities, acknowledgement and an alarm list; an events list
+  of operator actions (`hmi actions` in the terminal)
+- The Operator job opens the HMI
+
 ## In 0.3
 
 - Jobs above the map: operator, network engineer, SOC analyst and attacker.
@@ -21,8 +36,6 @@ release adds one of them.
 
 ## Next, by job
 
-- Operator: clickable HMI screens for each plant, so the operator works from
-  the HMI and not from the command line
 - SOC analyst: an OT monitoring console (asset inventory, communication
   baseline, alerts with packet details) in the style of the OT network
   monitoring tools used on site

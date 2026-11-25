@@ -30,6 +30,11 @@ step. [Open this lab](https://sdtslmn.github.io/zonesim/?lab=i03), or see the
   station, close the anti-surge valve and the compressor surges and trips,
   or bypass the ESD and the relief valve vents gas. In the data centre, stop
   the chilled water pumps and the servers shut down within minutes.
+- **Run it from the HMI.** Each plant has an operator screen in the
+  high-performance HMI style. Click a pump, the compressor or a chiller to
+  start, stop or change a setpoint. Every command is a Modbus write from the
+  HMI host through the firewall, so when your design blocks the HMI, the
+  operator sees it go stale.
 - **Attack it from the inside.** Scan for controllers from the office PC, read
   the PLC's firmware, and write to it. Modbus has no login, so on a flat
   network that just works, and the IDS sees it.
@@ -187,13 +192,16 @@ See [Firewall and switches](docs/help/devices.md) for the commands. ZoneSim
 imitates these command lines for practice and is not affiliated with
 Fortinet, Belden (Hirschmann) or Cisco.
 
+![The operator job at the Kestrel compressor station: the HMI tab with the compressor faceplate open, showing its values, start and stop, auto and manual, and the pressure setpoint](docs/images/web-hmi.png)
+
 ## The screen
 
 Labs, Help and Site are on the left. Above the map, pick your job: it sets
 where the terminal is connected (the HMI, a switch, the firewall, the
 console or a host in the office) and gives you the commands that job uses
-most. The network map and the plant view are on the top right, with a
-status strip. The terminal is docked at the bottom:
+most. The network map, the HMI and the plant view are on the top right,
+with a status strip. The HMI shows what the operator sees; the plant view
+shows the real process. The terminal is docked at the bottom:
 drag its edge to resize it, or fold it away. The **Site** button in the top
 bar switches plant in one click, and **Home** brings you back to the start
 page. On a phone the panels stack behind a tab bar.

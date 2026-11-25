@@ -5,7 +5,7 @@
 // Time is virtual. In the browser it follows the wall clock; lab checks and
 // tests move it forward instantly with settle().
 
-import { WRITE_FCS, FC_NAMES, type ModbusReply, type ModbusRequest } from "./modbus.js";
+import { WRITE_FCS, FC_NAMES, EXCEPTIONS, type ModbusReply, type ModbusRequest, type PointTable } from "./modbus.js";
 import { Network, type Host, type ServiceName, type Verdict } from "./network.js";
 import { Infra } from "./infra.js";
 import { requiredFlowStatus, riskChecks, type FlowStatus, type RiskCheck } from "./checks.js";
@@ -85,6 +85,26 @@ export interface FwLogEntry {
   reason: string;
 }
 
+/** An operator action on the HMI screen, and what came of it. */
+export interface HmiAction {
+  t: number;
+  /** What the operator did, e.g. "T-101 stop level 70 %". */
+  text: string;
+  ok: boolean;
+  /** What happened: "done", "no response from plc-1", "plc-1 rejected it". */
+  result: string;
+  /** Why, for learners: the firewall verdict or the Modbus exception. */
+  detail?: string;
+}
+
+/** Where the HMI reads a signal. */
+export interface HmiSource {
+  device: string;
+  table: PointTable;
+  addr: number;
+  tag: string;
+}
+
 export class Sim {
   readonly site: Site;
   readonly plant: ProcessModel;
@@ -103,6 +123,8 @@ export class Sim {
   /** Signal values the HMI last read, and when it last heard from each device. */
   hmiValues: Record<string, number> = {};
   hmiLast: Record<string, number> = {};
+  /** What operators did on the HMI screen, newest last. */
+  hmiActions: HmiAction[] = [];
 
   private seq = 0;
   private alertSeq = 1000;
@@ -223,6 +245,70 @@ export class Sim {
 
   get hmiOnline(): boolean {
     return this.hmiCommOk;
+  }
+
+  /** Controllers the HMI polls, its own controller first. */
+  hmiDevices(): string[] {
+    const h = this.site.hmi;
+    if (!h) return [];
+    const polled = this.site.polling.filter((p) => p.from === h.host && p.service === "modbus" && this.devices.has(p.to)).map((p) => p.to);
+    return [...new Set([h.device, ...polled])].filter((d) => this.devices.has(d));
+  }
+
+  /** Where the HMI reads a signal, or undefined if no controller it polls has it. */
+  hmiSource(signal: string): HmiSource | undefined {
+    for (const name of this.hmiDevices()) {
+      const d = this.devices.get(name)!;
+      for (const table of ["coil", "di", "ir", "hr"] as const) {
+        const p = d.def.points[table].find((x) => x.signal === signal);
+        if (p) return { device: name, table, addr: p.addr, tag: p.tag };
+      }
+    }
+    return undefined;
+  }
+
+  /** True when the HMI heard from this controller recently enough to trust its values. */
+  hmiFresh(device: string): boolean {
+    const h = this.site.hmi;
+    if (!h) return false;
+    return this.t < h.timeout || this.t - (this.hmiLast[device] ?? 0) <= h.timeout;
+  }
+
+  /** The point the HMI writes for a signal: a coil or holding register on the HMI's own controller. */
+  hmiWritable(signal: string): HmiSource | undefined {
+    const src = this.hmiSource(signal);
+    return src && src.device === this.site.hmi?.device && (src.table === "coil" || src.table === "hr") ? src : undefined;
+  }
+
+  /**
+   * An operator action on the HMI: a Modbus write from the HMI host to its
+   * controller, through the network like any other traffic. raw is the
+   * register value (or 0 and 1 for a coil).
+   */
+  hmiWrite(signal: string, raw: number, text: string): HmiAction {
+    this.advance();
+    const h = this.site.hmi;
+    const point = this.hmiWritable(signal);
+    let action: HmiAction;
+    if (!h || !point) action = { t: this.t, text, ok: false, result: "not available on this HMI" };
+    else {
+      const value = point.table === "coil" ? (raw ? 1 : 0) : Math.round(raw);
+      const fc = point.table === "coil" ? 5 : 6;
+      const r = this.modbus(h.host, h.device, { fc, addr: point.addr, values: [value] });
+      if (!r.verdict.delivered) action = { t: this.t, text, ok: false, result: `no response from ${h.device}`, detail: r.verdict.reason };
+      else if (!r.reply?.ok) {
+        const ex = r.reply?.exception;
+        action = { t: this.t, text, ok: false, result: `${h.device} rejected it`, detail: ex !== undefined ? `Modbus exception ${ex} (${EXCEPTIONS[ex] ?? "unknown"})` : undefined };
+      } else {
+        // The HMI reads the point back straight after a write.
+        this.hmiValues[signal] = this.plant.get(signal);
+        action = { t: this.t, text, ok: true, result: "done", detail: `fc ${fc} ${point.table} ${point.addr} (${point.tag}) = ${value}` };
+      }
+    }
+    this.hmiActions.push(action);
+    if (this.hmiActions.length > 100) this.hmiActions.shift();
+    this.emit();
+    return action;
   }
 
   /** Name of the safety system host, for labels. */

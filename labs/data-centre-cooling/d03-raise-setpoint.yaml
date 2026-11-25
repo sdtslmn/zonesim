@@ -27,6 +27,7 @@ checks:
 hints:
   - "`modbus write ${plc} hr ${plc:setpoint.chw} ${param.chwSetpoint*10+20}` sends function code 6."
   - "Run it on the BMS: `ssh ${hmi} modbus write ${plc} hr ${plc:setpoint.chw} ${param.chwSetpoint*10+20}`, then `wait 120`."
+  - "Or work like an operator: open the HMI tab, click the cooling control box, type ${param.chwSetpoint+2} as the chilled water setpoint and press Set. Then `wait 120`."
 solution:
   - ssh ${hmi} modbus write ${plc} hr ${plc:setpoint.chw} ${param.chwSetpoint*10+20}
   - ssh ${hmi} modbus read ${plc} hr ${plc:setpoint.chw}

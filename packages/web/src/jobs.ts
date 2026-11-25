@@ -23,7 +23,7 @@ export interface Job {
   id: JobId;
   label: string;
   blurb: string;
-  view: "map" | "plant";
+  view: "map" | "plant" | "hmi";
   places: Place[];
   quick: QuickCommand[];
 }
@@ -47,8 +47,8 @@ export function jobFor(id: JobId, sim: Sim): Job {
       return {
         id,
         label: "Operator",
-        blurb: `Run the plant. Watch the Plant view, and read or change the controller from the HMI with modbus.`,
-        view: "plant",
+        blurb: `Run the plant from the HMI screen: click equipment to start, stop and change setpoints. The terminal can work from the HMI host too.`,
+        view: "hmi",
         places: [...hostPlace(hmi, "operator HMI"), ...hostPlace(ews, "engineering workstation")],
         quick: [
           { cmd: "plant", label: "Plant status" },

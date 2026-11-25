@@ -23,6 +23,7 @@ checks:
 hints:
   - "`modbus write ${plc} hr ${plc:setpoint.discharge} ${param.setpoint*10-30}` sends function code 6."
   - "Run it on the HMI host: `ssh ${hmi} modbus write ${plc} hr ${plc:setpoint.discharge} ${param.setpoint*10-30}`, then `wait 90`."
+  - "Or work like an operator: open the HMI tab, click the compressor, type ${param.setpoint-3} as the pressure setpoint and press Set. Then `wait 90`."
 solution:
   - ssh ${hmi} modbus write ${plc} hr ${plc:setpoint.discharge} ${param.setpoint*10-30}
   - ssh ${hmi} modbus read ${plc} hr ${plc:setpoint.discharge}

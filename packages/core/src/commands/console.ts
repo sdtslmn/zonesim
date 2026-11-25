@@ -129,11 +129,19 @@ const plant: CommandFn = (args, { io, sim }) => {
 const hmi: CommandFn = (args, { io, sim }) => {
   const h = sim.site.hmi;
   if (wantsHelp(args)) {
-    io.stdout(`hmi    the operator screen${h ? ` on ${h.host}` : ""}. It shows what the HMI last read from the controllers.\n`);
+    io.stdout(`hmi           the operator screen${h ? ` on ${h.host}` : ""}. It shows what the HMI last read from the controllers.\nhmi actions   what operators did on the HMI screen (the HMI tab in the browser)\n`);
     return 0;
   }
   if (!h) {
     io.stdout("This site has no HMI defined.\n");
+    return 0;
+  }
+  if (args[0] === "actions" || args[0] === "log") {
+    if (!sim.hmiActions.length) {
+      io.stdout(`No operator actions on ${h.host} yet.\n`);
+      return 0;
+    }
+    io.stdout(table(["TIME", "OPERATOR ACTION", "RESULT", "DETAIL"], sim.hmiActions.map((a) => [clock(a.t), a.text, a.ok ? C.green(a.result) : C.red(a.result), a.detail ?? ""])));
     return 0;
   }
   const online = sim.hmiOnline;

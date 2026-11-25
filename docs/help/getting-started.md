@@ -21,9 +21,13 @@ Nothing leaves your browser and nothing real is touched.
 
 - **Left**: the **Labs** list and the current lab, this **Help**, and the
   **Site** tab where you pick or load a plant.
-- **Top right**: the **Map** of the network with live traffic, and the
-  **Plant** view with the process, data flows, design checks and alerts. The
-  strip above them shows the plant at a glance.
+- **Above the map**: your **job**. Operator, network engineer, SOC analyst
+  or attacker. Each job connects the terminal to the places that person
+  works from and offers the commands they use most.
+- **Top right**: the **Map** of the network with live traffic, the **HMI**
+  (the operator screen, see [The HMI screen](hmi.md)), and the **Plant** view
+  with the real process, data flows, design checks and alerts. The strip
+  above them shows the plant at a glance.
 - **Bottom**: the **terminal**. Drag its top edge to make it taller or
   shorter, or fold it away with the arrow button. ZoneSim remembers your
   layout.

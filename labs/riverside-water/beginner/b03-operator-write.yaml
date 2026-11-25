@@ -22,6 +22,7 @@ checks:
 hints:
   - "`modbus write ${plc} hr ${plc:setpoint.stop} ${param.stopLevel*10-50}` sends function code 6 to holding register ${plc:setpoint.stop}."
   - "Run it on the HMI host: `ssh ${hmi} modbus write ${plc} hr ${plc:setpoint.stop} ${param.stopLevel*10-50}`."
+  - "Or work like an operator: open the HMI tab, click the tank, type ${param.stopLevel-5} as the stop level and press Set. The HMI sends the same function code 6 write from ${hmi}."
 solution:
   - ssh ${hmi} modbus write ${plc} hr ${plc:setpoint.stop} ${param.stopLevel*10-50}
   - ssh ${hmi} modbus read ${plc} hr ${plc:setpoint.stop}
