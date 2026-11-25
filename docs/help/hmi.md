@@ -1,6 +1,6 @@
 # The HMI screen
 
-The **HMI** tab is the operator screen of the plant's HMI host (`hmi-01` at Riverside, `hmi-1` at Kestrel, `bms-01` at Harbour). Pick the **Operator** job and it opens by itself.
+The **HMI** tab is the operator screen of the plant's HMI host (`hmi-01` at Riverside, `hmi-1` at Kestrel, `bms-01` at Harbour, `scr-1` on the Meridian Line). Pick the **Operator** job and it opens by itself.
 
 It works the way a real HMI does:
 
@@ -31,8 +31,9 @@ Click a piece of equipment (or tab to it and press Enter) to open its **faceplat
 
 - **Start and stop, auto and manual**: the current state is the dark button. Some commands only work in one mode: the pump's start and stop at Riverside, for example, only in manual. The faceplate says why a button is disabled.
 - **Setpoints**: type a value and press **Set** or Enter. The HMI keeps setpoints within a safe range, shown next to the name. It also checks that the start level stays below the stop level, and so on.
-- **Confirmations**: commands that can hurt the plant (stopping chlorine dosing, stopping the chilled water pumps, putting anti-surge control in manual) ask first.
-- **Safety systems are read-only**: the SIS at Riverside, the ESD at Kestrel and the fire panel at Harbour appear on the HMI, but it cannot change them.
+- **Confirmations**: commands that can hurt the plant (stopping chlorine dosing, stopping the chilled water pumps, putting anti-surge control in manual, opening the metro feeder breaker) ask first.
+- **Several controllers**: the HMI writes to its own controller, and to other controllers it polls where the IDS baseline lists it as a normal writer. The metro control room, for example, runs both the traction power and the tunnel fans.
+- **Safety systems are read-only**: the SIS at Riverside, the ESD at Kestrel, the fire panel at Harbour and the emergency trip system on the Meridian Line appear on the HMI, but it cannot change them.
 
 After each command the faceplate shows the result: **Done** with the Modbus write it sent (for example `fc 6 hr 1 (LSP_STOP) = 750`), or **No response from plc-1** with the reason from the firewall, or the Modbus exception the controller returned.
 

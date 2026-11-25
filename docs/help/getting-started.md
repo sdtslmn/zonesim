@@ -5,7 +5,7 @@ your browser, with controllers, a safety system, an HMI, a historian and an
 office network, and a live process behind them. You segment it into zones
 and conduits, filter Modbus, and handle alerts, and the labs check your work.
 
-There are three plants, each with its own labs:
+There are four plants, each with its own labs:
 
 - **Riverside water treatment plant**: a tank, pumps, chlorine dosing and a
   safety trip on high level.
@@ -14,6 +14,10 @@ There are three plants, each with its own labs:
   centre that runs it over a WAN.
 - **Harbour data centre**: chillers, pumps and CRAH units cooling a data
   hall, a power meter, and the fire suppression panel.
+- **Meridian Line metro**: a traction power substation feeding the third
+  rail, tunnel ventilation with a fire mode, an emergency trip system that
+  protects track crews, and an operations control centre and backup centre
+  that run the line over a WAN.
 
 Nothing leaves your browser and nothing real is touched.
 

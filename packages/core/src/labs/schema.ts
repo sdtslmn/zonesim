@@ -111,7 +111,7 @@ export function parseLab(text: string, source = "lab"): Lab {
 
 /** Labs in learning order: by level, then id. */
 /** Sites in the order their labs are listed. Sites not named here follow, alphabetically. */
-export const LAB_SITE_ORDER = ["riverside-water", "gas-compressor-station", "data-centre-cooling"];
+export const LAB_SITE_ORDER = ["riverside-water", "gas-compressor-station", "data-centre-cooling", "metro-line"];
 
 const siteRank = (id: string) => {
   const i = LAB_SITE_ORDER.indexOf(id);

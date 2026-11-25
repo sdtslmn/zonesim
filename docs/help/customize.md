@@ -45,7 +45,8 @@ then reads "set the pump stop level (tank-plc holding register 1) to 70 %".
 ## How a site file works
 
 - `extends` names a built-in site to start from: `riverside-water`,
-  `gas-compressor-station` or `data-centre-cooling` (each plant as found), or
+  `gas-compressor-station`, `data-centre-cooling` or `metro-line` (each
+  plant as found), or
   `riverside-segmented` (Riverside with a finished zone and conduit design).
   A site file without `extends` must describe everything.
 - `rename` renames hosts or zones. Every reference is updated for you:
@@ -64,7 +65,7 @@ then reads "set the pump stop level (tank-plc holding register 1) to 70 %".
 | `hosts` | name, role, IP address, Purdue level (5, 4, 3.5, 3, 2, 1, 0), kind (`external`, `it`, `dmz`, `ot`), services, OS, login user, description |
 | `zones` | the zones as found, with the hosts in each. Most plants start with one flat zone. A zone can name its `vlan`, or a firewall `port` such as `wan1` for an outside link; ZoneSim picks one when you leave it out |
 | `conduits` | conduits as found, with rules such as `allow from vendor-laptop to ews-01 rdp` |
-| `process` | the process model (`water-tank`, `gas-compressor` or `dc-cooling`), tag names, and parameters such as levels, pressures, temperatures and alarm limits |
+| `process` | the process model (`water-tank`, `gas-compressor`, `dc-cooling` or `metro-line`), tag names, and parameters such as levels, pressures, temperatures and alarm limits |
 | `devices` | Modbus controllers: vendor, product, firmware, and the point map |
 | `network` | the firewall and the switches: brand, model, management address, and which host is on which switch port. Hosts you leave off every switch go on the first one |
 | `hmi` | which host is the HMI, which controller it shows, and when it reports a communication failure |
@@ -166,6 +167,23 @@ JSON Schema lists every signal. The signals of each model:
 | `load.it`, `power.cooling` | ir | kW |
 | `pue` | ir | hundredths, 135 = 1.35 |
 | `setpoint.chw`, `setpoint.supply_air` | hr | tenths of a °C |
+
+### Metro line (`metro-line`)
+
+| Signal | Table | Meaning |
+| --- | --- | --- |
+| `feeder.command`, `rectifier.enable`, `control.auto`, `possession` | coil | feeder breaker close command, rectifier on, auto reclose, work possession registered |
+| `fan1.run`, `fan2.run`, `vent.auto`, `fire.mode` | coil | tunnel fans in manual, auto ventilation, fire mode |
+| `sis.bypass` | coil | emergency trip bypass |
+| `feeder.closed`, `rectifier.running`, `alarm.trip` | di | substation states |
+| `fan1.running`, `fan2.running`, `alarm.tunnel_hot`, `fire.mode_active` | di | ventilation states |
+| `sis.tripped`, `sis.bypassed`, `crew.on_track` | di | emergency trip state and the possession key switch |
+| `voltage.line` | ir | line voltage, V |
+| `current.feeder`, `sis.current` | ir | feeder current, A |
+| `trains.moving`, `trains.stranded` | ir | trains moving, trains stopped in the tunnel |
+| `temp.tunnel` | ir | tenths of a °C |
+| `setpoint.overcurrent`, `sis.trip_current` | hr | feeder trip and backup trip, A |
+| `setpoint.fan_start` | hr | tunnel temperature at which the first fan starts, tenths of a °C |
 
 ## Which labs run on my site
 

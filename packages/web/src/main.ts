@@ -228,11 +228,12 @@ if (!JOB_IDS.includes(state.job)) state.job = "network";
 const PLANT_KIND: Record<string, string> = {
   "riverside-water": "drinking water",
   "gas-compressor-station": "gas pipeline",
+  "metro-line": "metro",
   "data-centre-cooling": "data centre",
 };
 
 /** Built-in sites in the order people see them. */
-const SITE_ORDER = ["riverside-water", "riverside-segmented", "gas-compressor-station", "data-centre-cooling"];
+const SITE_ORDER = ["riverside-water", "riverside-segmented", "gas-compressor-station", "data-centre-cooling", "metro-line"];
 
 /** A short description of a site for menus: its plant, and whether it is a built-in. */
 function siteKind(site: Site): string {
@@ -256,7 +257,8 @@ function siteById(id: string): Site | undefined {
 
 /** Open the plant group of the lab or site in use. */
 function openCurrentPlant(): void {
-  const id = trainer.lab?.site ?? (trainer.session ? [trainer.sim.site.id, ...trainer.sim.site.extends].find((x) => PLANT_KIND[x]) : undefined) ?? "riverside-water";
+  const site = trainer.session ? trainer.sim.site : trainer.site;
+  const id = trainer.lab?.site ?? [site.id, ...site.extends].find((x) => PLANT_KIND[x]) ?? "riverside-water";
   state.openPlants.add(id);
 }
 
@@ -450,7 +452,7 @@ function renderSide(): void {
 }
 
 function labListPanel(): string {
-  let html = `<h2>Labs</h2><p class="meta">Short exercises on three simulated plants, each checked automatically. ${trainer.done.size} of ${labs.length} done.</p>`;
+  let html = `<h2>Labs</h2><p class="meta">Short exercises on four simulated plants, each checked automatically. ${trainer.done.size} of ${labs.length} done.</p>`;
   const sites = [...new Set(trainer.labs.map((l) => l.site))];
   for (const siteId of sites) {
     const plantLabs = trainer.labs.filter((l) => l.site === siteId);

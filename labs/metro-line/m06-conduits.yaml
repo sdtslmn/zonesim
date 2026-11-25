@@ -1,0 +1,88 @@
+id: m06-conduits
+site: metro-line
+title: Connect the zones with conduits
+level: intermediate
+minutes: 15
+topic: Conduits
+intro: |
+  The zones are in place and the line is half blind: the OCC has lost the
+  station, the historian cannot read the controllers, and the reports are
+  empty. Add conduits with firewall rules for exactly the flows the station
+  needs. A new conduit denies everything.
+
+  `plant` and `report` list each blocked flow and the reason.
+setup:
+  - zone create enterprise --sl 1
+  - zone create dmz --sl 2
+  - zone create operations --sl 2
+  - zone create control --sl 3
+  - zone create safety --sl 3
+  - zone set ${control-centre.zone} --sl 2
+  - zone add enterprise ${office}
+  - zone add dmz ${report-server} ${jump}
+  - zone add operations ${historian}
+  - zone add control ${hmi} ${ews} ${plc} ${tvs}
+  - zone add safety ${sis}
+  - zone delete ${plc.zone}
+tasks:
+  - Run `plant` to see which data flows are blocked.
+  - "Create a conduit for each pair of zones that must talk, for example `conduit create ops-control operations control`."
+  - "Add an allow rule for each flow, for example `fw allow ops-control from ${historian} to ${plc} modbus`."
+  - Bring back every data flow except the traction power maker's remote login (that is lab M08). The OCC needs ${plc}, ${tvs} and ${sis} across the WAN, and the backup OCC needs ${plc}.
+  - Keep the office away from the plant. ${office} must not reach ${plc} or the historian.
+checks:
+  - name: The historian reads ${plc}
+    required: historian-plc
+  - name: The historian reads ${tvs}
+    required: historian-tvs
+  - name: The historian reads ${sis}
+    required: historian-sis
+  - name: The control room sees the emergency trip status
+    required: hmi-sis
+  - name: The OCC runs the traction power across the WAN
+    required: occ-plc
+  - name: The OCC reaches the tunnel ventilation
+    required: occ-tvs
+  - name: The OCC sees the emergency trip status
+    required: occ-sis
+  - name: The backup OCC keeps its live copy
+    required: bocc-plc
+  - name: The historian copies data to ${report-server}
+    required: historian-replica
+  - name: Office reports work from ${report-server}
+    required: office-reports
+  - name: ${office} cannot reach ${plc}
+    flow: { from: "${office}", to: "${plc}", service: modbus, expect: blocked }
+  - name: ${office} cannot reach the historian
+    flow: { from: "${office}", to: "${historian}", service: https, expect: blocked }
+hints:
+  - "The historian talks to three zones: control (${plc} and ${tvs}), safety (${sis}) and dmz (${report-server})."
+  - "The control centres' zone is ${control-centre.zone}. It needs two conduits: one to control (${plc}, ${tvs}) and one to safety (${sis})."
+  - "`conduit create wan-control ${control-centre.zone} control`, then one rule per flow, including `fw allow wan-control from ${backup-centre} to ${plc} modbus`."
+solution:
+  - conduit create ops-control operations control
+  - fw allow ops-control from ${historian} to ${plc} modbus
+  - fw allow ops-control from ${historian} to ${tvs} modbus
+  - conduit create ops-safety operations safety
+  - fw allow ops-safety from ${historian} to ${sis} modbus
+  - conduit create control-safety control safety
+  - fw allow control-safety from ${hmi} to ${sis} modbus
+  - conduit create wan-control ${control-centre.zone} control
+  - fw allow wan-control from ${control-centre} to ${plc} modbus
+  - fw allow wan-control from ${control-centre} to ${tvs} modbus
+  - fw allow wan-control from ${backup-centre} to ${plc} modbus
+  - conduit create wan-safety ${control-centre.zone} safety
+  - fw allow wan-safety from ${control-centre} to ${sis} modbus
+  - conduit create ops-dmz operations dmz
+  - fw allow ops-dmz from ${historian} to ${report-server} https
+  - conduit create ent-dmz enterprise dmz
+  - fw allow ent-dmz from ${office} to ${report-server} https
+learned: |
+  Every conduit now carries named flows from named hosts. Look at the WAN
+  conduit though: the backup OCC, which only keeps a live copy, may send any
+  Modbus request to ${plc}, including opening the feeder. So may the OCC to
+  the emergency trip system. The next lab narrows that with function code
+  filtering.
+refs:
+  - IEC 62443-3-2 ZCR 3 (partition into zones and conduits)
+  - IEC 62443-3-3 SR 5.2 RE 1 (deny by default, allow by exception)

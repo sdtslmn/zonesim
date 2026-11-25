@@ -46,7 +46,8 @@
           "enum": [
             "water-tank",
             "gas-compressor",
-            "dc-cooling"
+            "dc-cooling",
+            "metro-line"
           ],
           "description": "The process the plant runs"
         },
@@ -112,6 +113,34 @@
             "agent": {
               "type": "string",
               "default": "clean agent"
+            },
+            "line": {
+              "type": "string",
+              "default": "Meridian Line"
+            },
+            "substation": {
+              "type": "string",
+              "default": "TPSS-1"
+            },
+            "rectifier": {
+              "type": "string",
+              "default": "RECT-1"
+            },
+            "feeder": {
+              "type": "string",
+              "default": "CB-11"
+            },
+            "fan1": {
+              "type": "string",
+              "default": "TVF-1"
+            },
+            "fan2": {
+              "type": "string",
+              "default": "TVF-2"
+            },
+            "tunnel": {
+              "type": "string",
+              "default": "Central to Quay tunnel"
             }
           },
           "additionalProperties": {
@@ -387,6 +416,90 @@
               "maximum": 100,
               "default": 30,
               "description": "IT load left after the thermal shutdown, %"
+            },
+            "trains": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 60,
+              "default": 6,
+              "description": "Trains in service on the section"
+            },
+            "lineVoltage": {
+              "type": "number",
+              "minimum": 100,
+              "maximum": 3000,
+              "default": 750,
+              "description": "Line voltage with no load, V DC"
+            },
+            "trainCurrent": {
+              "type": "number",
+              "minimum": 10,
+              "maximum": 5000,
+              "default": 400,
+              "description": "Average current each moving train draws, A"
+            },
+            "overcurrent": {
+              "type": "number",
+              "minimum": 100,
+              "maximum": 60000,
+              "default": 5000,
+              "description": "Default feeder overcurrent trip setting, A"
+            },
+            "etsTrip": {
+              "type": "number",
+              "minimum": 100,
+              "maximum": 60000,
+              "default": 9000,
+              "description": "Default emergency trip system backup trip, A"
+            },
+            "faultCurrent": {
+              "type": "number",
+              "minimum": 100,
+              "maximum": 100000,
+              "default": 12000,
+              "description": "Current of a short circuit on the line, A"
+            },
+            "tunnelShare": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 67,
+              "description": "Share of the trains that are in the tunnel at any time, %"
+            },
+            "ambient": {
+              "type": "number",
+              "minimum": -20,
+              "maximum": 45,
+              "default": 26,
+              "description": "Tunnel temperature with no trains, °C"
+            },
+            "fanStart": {
+              "type": "number",
+              "minimum": 10,
+              "maximum": 50,
+              "default": 30,
+              "description": "Default tunnel temperature at which the first fan starts, °C"
+            },
+            "hotAlarm": {
+              "type": "number",
+              "minimum": 10,
+              "maximum": 60,
+              "default": 35,
+              "description": "Tunnel temperature high alarm, °C"
+            },
+            "heatStress": {
+              "type": "number",
+              "minimum": 10,
+              "maximum": 70,
+              "default": 40,
+              "description": "Tunnel temperature at which passengers in a stranded train are at risk, °C"
+            },
+            "possessionTime": {
+              "type": "number",
+              "minimum": 60,
+              "maximum": 36000,
+              "default": 1800,
+              "description": "How long a work crew stays on the track once a possession starts, s"
             }
           },
           "additionalProperties": false
@@ -747,7 +860,31 @@
                         "load.it",
                         "power.cooling",
                         "pue",
-                        "fire.temp"
+                        "fire.temp",
+                        "feeder.command",
+                        "rectifier.enable",
+                        "possession",
+                        "setpoint.overcurrent",
+                        "fan1.run",
+                        "fan2.run",
+                        "vent.auto",
+                        "fire.mode",
+                        "setpoint.fan_start",
+                        "sis.trip_current",
+                        "feeder.closed",
+                        "rectifier.running",
+                        "alarm.trip",
+                        "voltage.line",
+                        "current.feeder",
+                        "trains.moving",
+                        "trains.stranded",
+                        "fan1.running",
+                        "fan2.running",
+                        "alarm.tunnel_hot",
+                        "fire.mode_active",
+                        "temp.tunnel",
+                        "crew.on_track",
+                        "sis.current"
                       ],
                       "description": "The process signal this point exposes"
                     },
@@ -840,7 +977,31 @@
                         "load.it",
                         "power.cooling",
                         "pue",
-                        "fire.temp"
+                        "fire.temp",
+                        "feeder.command",
+                        "rectifier.enable",
+                        "possession",
+                        "setpoint.overcurrent",
+                        "fan1.run",
+                        "fan2.run",
+                        "vent.auto",
+                        "fire.mode",
+                        "setpoint.fan_start",
+                        "sis.trip_current",
+                        "feeder.closed",
+                        "rectifier.running",
+                        "alarm.trip",
+                        "voltage.line",
+                        "current.feeder",
+                        "trains.moving",
+                        "trains.stranded",
+                        "fan1.running",
+                        "fan2.running",
+                        "alarm.tunnel_hot",
+                        "fire.mode_active",
+                        "temp.tunnel",
+                        "crew.on_track",
+                        "sis.current"
                       ],
                       "description": "The process signal this point exposes"
                     },
@@ -933,7 +1094,31 @@
                         "load.it",
                         "power.cooling",
                         "pue",
-                        "fire.temp"
+                        "fire.temp",
+                        "feeder.command",
+                        "rectifier.enable",
+                        "possession",
+                        "setpoint.overcurrent",
+                        "fan1.run",
+                        "fan2.run",
+                        "vent.auto",
+                        "fire.mode",
+                        "setpoint.fan_start",
+                        "sis.trip_current",
+                        "feeder.closed",
+                        "rectifier.running",
+                        "alarm.trip",
+                        "voltage.line",
+                        "current.feeder",
+                        "trains.moving",
+                        "trains.stranded",
+                        "fan1.running",
+                        "fan2.running",
+                        "alarm.tunnel_hot",
+                        "fire.mode_active",
+                        "temp.tunnel",
+                        "crew.on_track",
+                        "sis.current"
                       ],
                       "description": "The process signal this point exposes"
                     },
@@ -1026,7 +1211,31 @@
                         "load.it",
                         "power.cooling",
                         "pue",
-                        "fire.temp"
+                        "fire.temp",
+                        "feeder.command",
+                        "rectifier.enable",
+                        "possession",
+                        "setpoint.overcurrent",
+                        "fan1.run",
+                        "fan2.run",
+                        "vent.auto",
+                        "fire.mode",
+                        "setpoint.fan_start",
+                        "sis.trip_current",
+                        "feeder.closed",
+                        "rectifier.running",
+                        "alarm.trip",
+                        "voltage.line",
+                        "current.feeder",
+                        "trains.moving",
+                        "trains.stranded",
+                        "fan1.running",
+                        "fan2.running",
+                        "alarm.tunnel_hot",
+                        "fire.mode_active",
+                        "temp.tunnel",
+                        "crew.on_track",
+                        "sis.current"
                       ],
                       "description": "The process signal this point exposes"
                     },

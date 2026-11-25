@@ -1,0 +1,54 @@
+id: m04-flat-network
+site: metro-line
+title: One write from the office stops every train
+level: beginner
+minutes: 12
+topic: Attack and detection
+intro: |
+  The station office PC ${office} sits on the same flat network as the
+  traction power controller. Play an attacker on it: find the controllers,
+  then open feeder breaker ${tag.feeder}. With the third rail dead, every
+  train stops where it is, and the ones in the ${tag.tunnel} are stranded
+  with their passengers.
+
+  Watch what happens, then put the line right. This is a simulated metro,
+  so go ahead.
+tasks:
+  - "From ${office}, find the controllers: `ssh ${office} nmap ${plc.net}`."
+  - "From ${office}, open the feeder breaker: write 0 to ${plc} coil ${plc:feeder.command}."
+  - Run `wait 30`, then `plant`. The line is dead and trains are stranded in the tunnel.
+  - On the console, run `alerts` and open the alert about the write with `alerts show ID`.
+  - From ${hmi}, close the feeder again (coil ${plc:feeder.command} = 1), then `wait 30`.
+  - Acknowledge the alerts once you have read them.
+checks:
+  - name: The IDS noticed the scan from ${office}
+    alert: { title: Network scan, src: "${office}" }
+  - name: The feeder close command is back on
+    register: { host: "${plc}", signal: feeder.command, equals: 1 }
+  - name: The trains are moving again
+    state: { path: plant.trainsMoving, gte: 1 }
+  - name: No train is stranded in the tunnel
+    state: { path: plant.trainsStranded, equals: 0 }
+  - name: The alert for ${office}'s write is acknowledged
+    alert: { title: Unauthorized Modbus write, src: "${office}", acked: true }
+hints:
+  - "`ssh ${office} modbus write ${plc} coil ${plc:feeder.command} 0` opens the breaker."
+  - "`ssh ${hmi} modbus write ${plc} coil ${plc:feeder.command} 1` closes it again. The trains start together, so the current peaks for a moment."
+  - "`alerts ack all` acknowledges every alert."
+solution:
+  - ssh ${office} nmap ${plc.net}
+  - ssh ${office} modbus write ${plc} coil ${plc:feeder.command} 0
+  - wait 30
+  - ssh ${hmi} modbus write ${plc} coil ${plc:feeder.command} 1
+  - wait 30
+  - alerts ack all
+learned: |
+  One Modbus write from an office PC stopped the line and left passengers
+  sitting in a tunnel. Nothing on the network stopped it, and the controller
+  could not tell the office from the control room. The IDS saw the scan and
+  the write, but detection is not prevention: that takes zones and conduits.
+  In a real metro an outage like this also strains the tunnel ventilation
+  and can lead passengers to leave the train and walk the tunnel.
+refs:
+  - MITRE ATT&CK for ICS T0855 (unauthorized command message)
+  - MITRE ATT&CK for ICS T0826 (loss of availability)

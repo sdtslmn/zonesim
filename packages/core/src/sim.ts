@@ -274,10 +274,17 @@ export class Sim {
     return this.t < h.timeout || this.t - (this.hmiLast[device] ?? 0) <= h.timeout;
   }
 
-  /** The point the HMI writes for a signal: a coil or holding register on the HMI's own controller. */
+  /**
+   * The point the HMI writes for a signal: a coil or holding register on the
+   * HMI's own controller, or on another controller it polls where the IDS
+   * baseline lists it as a normal writer. Safety systems stay read-only.
+   */
   hmiWritable(signal: string): HmiSource | undefined {
+    const h = this.site.hmi;
     const src = this.hmiSource(signal);
-    return src && src.device === this.site.hmi?.device && (src.table === "coil" || src.table === "hr") ? src : undefined;
+    if (!h || !src || (src.table !== "coil" && src.table !== "hr")) return undefined;
+    if (this.site.ids.safety.includes(src.device)) return undefined;
+    return src.device === h.device || (this.site.ids.writers[src.device] ?? []).includes(h.host) ? src : undefined;
   }
 
   /**
@@ -294,11 +301,11 @@ export class Sim {
     else {
       const value = point.table === "coil" ? (raw ? 1 : 0) : Math.round(raw);
       const fc = point.table === "coil" ? 5 : 6;
-      const r = this.modbus(h.host, h.device, { fc, addr: point.addr, values: [value] });
-      if (!r.verdict.delivered) action = { t: this.t, text, ok: false, result: `no response from ${h.device}`, detail: r.verdict.reason };
+      const r = this.modbus(h.host, point.device, { fc, addr: point.addr, values: [value] });
+      if (!r.verdict.delivered) action = { t: this.t, text, ok: false, result: `no response from ${point.device}`, detail: r.verdict.reason };
       else if (!r.reply?.ok) {
         const ex = r.reply?.exception;
-        action = { t: this.t, text, ok: false, result: `${h.device} rejected it`, detail: ex !== undefined ? `Modbus exception ${ex} (${EXCEPTIONS[ex] ?? "unknown"})` : undefined };
+        action = { t: this.t, text, ok: false, result: `${point.device} rejected it`, detail: ex !== undefined ? `Modbus exception ${ex} (${EXCEPTIONS[ex] ?? "unknown"})` : undefined };
       } else {
         // The HMI reads the point back straight after a write.
         this.hmiValues[signal] = this.plant.get(signal);

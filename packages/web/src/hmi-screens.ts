@@ -554,7 +554,176 @@ function dc(sim: Sim): ScreenDef {
   return { objects, alarms, svg };
 }
 
-const SCREENS: Record<string, (sim: Sim) => ScreenDef> = { "water-tank": water, "gas-compressor": gas, "dc-cooling": dc };
+// ---------------------------------------------------------------- metro line
+
+function metro(sim: Sim): ScreenDef {
+  const t = sim.plant.tags;
+  const p = sim.plant.params;
+  const ets = sim.safetyName ?? "ETS";
+  const peak = Math.ceil((p.trains * p.trainCurrent * 1.25 * 1.5) / 100) * 100;
+  const objects: HmiObject[] = [
+    {
+      id: "substation",
+      tag: t.substation ?? "TPSS-1",
+      title: "Traction power substation",
+      rows: [
+        { label: `Rectifier ${t.rectifier ?? ""}`.trim(), sig: "rectifier.running", on: "Running", off: "Off" },
+        { label: `Feeder ${t.feeder ?? ""}`.trim(), sig: "feeder.closed", on: "Closed", off: "Open" },
+        { label: "Overcurrent trip", sig: "alarm.trip", on: "TRIPPED", off: "No", bad: true },
+        { label: "Line voltage", sig: "voltage.line", scale: 1, digits: 0, unit: "V" },
+        { label: "Feeder current", sig: "current.feeder", scale: 1, digits: 0, unit: "A" },
+        { label: "Trip setting", sig: "setpoint.overcurrent", scale: 1, digits: 0, unit: "A" },
+        { label: "Auto reclose", sig: "control.auto", on: "On", off: "Off" },
+      ],
+      controls: [
+        { kind: "pair", sig: "feeder.command", label: `Feeder ${t.feeder ?? ""}`.trim(), one: "Close", zero: "Open", confirm: { value: 0, text: "Open the feeder? Every train on the section stops, and the ones in the tunnel are stranded with their passengers." } },
+        { kind: "pair", sig: "rectifier.enable", label: "Rectifier", one: "On", zero: "Off", confirm: { value: 0, text: "Switch the rectifier off? The line goes dead and the trains stop." } },
+        { kind: "pair", sig: "control.auto", label: "Auto reclose", one: "On", zero: "Off" },
+        { kind: "setpoint", sig: "setpoint.overcurrent", label: "Overcurrent trip", scale: 1, digits: 0, unit: "A", min: peak, max: Math.max(peak, p.faultCurrent - 1000) },
+      ],
+      note: () => `The HMI keeps the trip setting above the current of trains starting together (${peak} A) and well below a short circuit (${p.faultCurrent} A). Closing the feeder also resets a trip.`,
+    },
+    {
+      id: "possession",
+      tag: "Possession",
+      title: "Work on the track",
+      rows: [
+        { label: "Possession registered", sig: "possession", on: "Yes: feeder held open", off: "No" },
+        { label: "Crew on the track", sig: "crew.on_track", on: "Yes (key out)", off: "No", bad: true },
+        { label: "Line voltage", sig: "voltage.line", scale: 1, digits: 0, unit: "V" },
+      ],
+      controls: [
+        { kind: "pair", sig: "possession", label: "Possession", one: "Register", zero: "Clear", confirm: { value: 0, text: "Clear the possession? Only when the crew has left the track and handed it back." } },
+      ],
+      note: () => `While a possession is registered the controller holds feeder ${t.feeder ?? ""} open and no trains run. The emergency trip system ${ets} holds the rectifier off while the crew's key is out, as a second layer.`,
+    },
+    {
+      id: "trains",
+      tag: t.line ?? "Line",
+      title: "Trains on the section",
+      rows: [
+        { label: "Moving", sig: "trains.moving", scale: 1, digits: 0, unit: "" },
+        { label: "Stopped in the tunnel", sig: "trains.stranded", scale: 1, digits: 0, unit: "" },
+        { label: "Line voltage", sig: "voltage.line", scale: 1, digits: 0, unit: "V" },
+      ],
+      controls: [],
+      note: () => "Train positions come from the signalling system, which is separate from this HMI. With the line dead, trains stop where they are.",
+    },
+    {
+      id: "fans",
+      tag: `${t.fan1 ?? "TVF-1"}, ${t.fan2 ?? "TVF-2"}`,
+      title: "Tunnel ventilation",
+      rows: [
+        { label: "Tunnel temperature", sig: "temp.tunnel", scale: 10, digits: 1, unit: "°C" },
+        { label: `Fan ${t.fan1 ?? "1"}`, sig: "fan1.running", on: "Running", off: "Stopped" },
+        { label: `Fan ${t.fan2 ?? "2"}`, sig: "fan2.running", on: "Running", off: "Stopped" },
+        { label: "Mode", sig: "vent.auto", on: "Auto (on temperature)", off: "Manual" },
+        { label: "Fire mode", sig: "fire.mode_active", on: "ACTIVE", off: "Off", bad: true },
+        { label: "First fan starts at", sig: "setpoint.fan_start", scale: 10, digits: 1, unit: "°C" },
+      ],
+      controls: [
+        { kind: "pair", sig: "vent.auto", label: "Mode", one: "Auto", zero: "Manual", confirm: { value: 0, text: "Put tunnel ventilation in manual? Nothing will start the fans if trains are stranded and the tunnel heats up." } },
+        { kind: "pair", sig: "fan1.run", label: `Fan ${t.fan1 ?? "1"}`, one: "Start", zero: "Stop", blocked: manualOnly("vent.auto", "In auto the controller starts the fans on tunnel temperature. Switch to manual first.") },
+        { kind: "pair", sig: "fan2.run", label: `Fan ${t.fan2 ?? "2"}`, one: "Start", zero: "Stop", blocked: manualOnly("vent.auto", "In auto the controller starts the fans on tunnel temperature. Switch to manual first.") },
+        { kind: "setpoint", sig: "setpoint.fan_start", label: "Fan start temperature", scale: 10, digits: 1, unit: "°C", min: 22, max: p.hotAlarm - 1 },
+        { kind: "pair", sig: "fire.mode", label: "Fire mode", one: "On", zero: "Off", confirm: { value: 1, text: "Start fire mode? Both fans run at full and every train is held at a station." } },
+      ],
+      note: () => `The tunnel high alarm is at ${p.hotAlarm} °C. Above ${p.heatStress} °C passengers in a stranded train are at risk.`,
+    },
+    {
+      id: "ets",
+      tag: ets,
+      title: "Emergency trip system",
+      rows: [
+        { label: "Trip", sig: "sis.tripped", on: "Tripped: rectifier held off", off: "Armed" },
+        { label: "Bypass", sig: "sis.bypassed", on: "BYPASSED", off: "Not bypassed", bad: true },
+        { label: "Possession key", sig: "crew.on_track", on: "Out: crew on the track", off: "In" },
+        { label: "Independent current", sig: "sis.current", scale: 1, digits: 0, unit: "A" },
+        { label: "Backup trip", sig: "sis.trip_current", scale: 1, digits: 0, unit: "A" },
+      ],
+      controls: [],
+      note: () => "The emergency trip system is independent of the traction power controller. The HMI shows its state but cannot change it.",
+    },
+  ];
+  const live = (c: Ctx) => c.v("voltage.line") > 0;
+  const alarms: HmiAlarm[] = [
+    { id: "live-crew", prio: 1, text: "Line live with a crew on the track", obj: "possession", active: (c) => on(c, "crew.on_track") && live(c) },
+    { id: "heat", prio: 1, text: "Stranded passengers at risk: tunnel too hot", obj: "fans", active: (c) => c.v("trains.stranded") > 0 && c.v("temp.tunnel") > p.heatStress * 10 },
+    { id: "stranded", prio: 1, text: "Trains stranded in the tunnel", obj: "trains", active: (c) => c.v("trains.stranded") > 0 },
+    { id: "ets-bypass", prio: 1, text: `${ets} emergency trip bypassed`, obj: "ets", active: (c) => on(c, "sis.bypassed") },
+    { id: "trip", prio: 2, text: `Feeder ${t.feeder ?? ""} tripped on overcurrent`, obj: "substation", active: (c) => on(c, "alarm.trip") },
+    { id: "hot", prio: 2, text: "Tunnel temperature high", obj: "fans", active: (c) => on(c, "alarm.tunnel_hot") },
+    { id: "fire-mode", prio: 2, text: "Fire mode active: trains held", obj: "fans", active: (c) => on(c, "fire.mode_active") },
+    { id: "unprotected", prio: 2, text: "A short circuit would not be cleared", obj: "substation", active: (c) => c.has("setpoint.overcurrent") && c.v("setpoint.overcurrent") >= p.faultCurrent && (on(c, "sis.bypassed") || c.v("sis.trip_current") >= p.faultCurrent) },
+    { id: "vent-manual", prio: 3, text: "Tunnel ventilation in manual", obj: "fans", active: (c) => c.has("vent.auto") && !on(c, "vent.auto") },
+    { id: "possession", prio: 3, text: "Possession in force: no trains", obj: "possession", active: (c) => on(c, "possession") },
+  ];
+  const svg = (c: Ctx) => {
+    const isLive = live(c);
+    const closed = on(c, "feeder.closed");
+    const rect = on(c, "rectifier.running");
+    const moving = Math.max(0, c.v("trains.moving") || 0);
+    const stranded = Math.max(0, c.v("trains.stranded") || 0);
+    const tx0 = 240;
+    const tx1 = 520;
+    const train = (x: number, y: number, cls: string) => `<rect x="${x}" y="${y - 7}" width="40" height="14" rx="3" class="h-train ${cls}"/>`;
+    const trains: string[] = [];
+    for (let i = 0; i < moving; i++) trains.push(train(40 + ((i >> 1) * 640) / Math.max(1, Math.ceil(moving / 2)) + (i % 2) * 60, i % 2 ? 268 : 228, "run"));
+    for (let i = 0; i < stranded; i++) trains.push(train(tx0 + 20 + (i >> 1) * 120 + (i % 2) * 50, i % 2 ? 268 : 228, "stuck"));
+    const breaker = closed ? `<path d="M180 76 L204 76" class="h-switch"/>` : `<path d="M180 76 L198 60" class="h-switch"/>`;
+    const fanSym = (x: number, sig: string, name: string) => {
+      const run = on(c, sig);
+      return `<g class="h-fan${run ? " run" : ""}${c.fresh(sig) ? "" : " stale"}"><circle cx="${x}" cy="140" r="14"/><path d="M${x} 140 L${x - 9} 131 M${x} 140 L${x + 10} 133 M${x} 140 L${x - 1} 152"/></g>${label(x, 168, name, "h-tagname", "middle")}${state(x, 182, run ? "RUN" : "STOP")}`;
+    };
+    const etsBad = on(c, "sis.bypassed");
+    return `<svg class="hmi-svg" viewBox="0 0 720 350" width="100%">
+      ${obj(
+        c,
+        "substation",
+        `<rect x="20" y="46" width="130" height="62" rx="3" class="h-machine${rect ? " run" : ""}${c.fresh("rectifier.running") ? "" : " stale"}"/>
+        ${label(85, 70, t.substation ?? "TPSS-1", rect ? "h-tagname inv" : "h-tagname", "middle")}
+        ${state(85, 90, `${t.rectifier ?? "RECT"} ${rect ? "ON" : "OFF"}`, !rect, "middle", rect)}
+        ${breaker}<circle cx="180" cy="76" r="3.5" class="h-node"/><circle cx="204" cy="76" r="3.5" class="h-node"/>
+        ${label(192, 50, t.feeder ?? "CB-11", "h-tagname", "middle")}
+        ${state(192, 100, closed ? "CLOSED" : on(c, "alarm.trip") ? "TRIPPED" : "OPEN", on(c, "alarm.trip"))}
+        ${box(c, 20, 128, "voltage.line", 1, 0, "V", { w: 50, tag: "VT LINE" })}
+        ${box(c, 100, 128, "current.feeder", 1, 0, "A", { w: 50, tag: "IT FEEDER" })}
+        ${alarmMark(c, "substation", 158, 50)}`,
+        { x: 14, y: 36, w: 210, h: 116 },
+      )}
+      <path d="M150 76 H180 M204 76 H220 V228" class="h-pipe thin${isLive ? " flow" : ""}"/>
+      <rect x="${tx0}" y="190" width="${tx1 - tx0}" height="80" rx="10" class="h-vessel"/>
+      ${label((tx0 + tx1) / 2, 286, (t.tunnel ?? "tunnel").toUpperCase(), "h-small", "middle")}
+      <path d="M20 228 H700 M20 268 H700" class="h-rail${isLive ? " live" : ""}"/>
+      <rect x="30" y="182" width="190" height="8" class="h-platform"/><rect x="530" y="182" width="170" height="8" class="h-platform"/>
+      ${label(125, 176, "CENTRAL", "h-small", "middle")}${label(615, 176, "QUAY", "h-small", "middle")}
+      ${obj(c, "trains", `${trains.join("")}${state(620, 290, stranded > 0 ? `${stranded} STRANDED` : moving > 0 ? `${moving} MOVING` : "NO TRAINS MOVING", stranded > 0)}${alarmMark(c, "trains", 690, 284)}`, { x: 20, y: 196, w: 690, h: 98 })}
+      ${obj(c, "fans", `${fanSym(tx0 + 40, "fan1.running", t.fan1 ?? "TVF-1")}${fanSym(tx1 - 40, "fan2.running", t.fan2 ?? "TVF-2")}${box(c, 352, 130, "temp.tunnel", 10, 1, "°C", { w: 48, tag: "TT TUNNEL", alarm: on(c, "alarm.tunnel_hot") })}${state(380, 170, on(c, "fire.mode_active") ? "FIRE MODE" : on(c, "vent.auto") ? "AUTO" : "MAN", on(c, "fire.mode_active") || !on(c, "vent.auto"))}${alarmMark(c, "fans", tx1 - 6, 120)}`, { x: tx0, y: 110, w: tx1 - tx0, h: 78 })}
+      ${obj(
+        c,
+        "possession",
+        `<rect x="20" y="300" width="200" height="42" class="h-panel${on(c, "crew.on_track") && isLive ? " bad" : ""}"/>
+        ${label(30, 317, "POSSESSION", "h-tagname")}
+        ${state(30, 334, on(c, "possession") ? "REGISTERED" : on(c, "crew.on_track") ? "CREW ON TRACK, NOT REGISTERED" : "NONE", on(c, "crew.on_track") && !on(c, "possession"), "start")}
+        ${alarmMark(c, "possession", 208, 312)}`,
+        { x: 14, y: 294, w: 212, h: 54 },
+      )}
+      ${obj(
+        c,
+        "ets",
+        `<rect x="540" y="40" width="160" height="80" class="h-panel${etsBad ? " bad" : ""}"/>
+        ${label(552, 60, `${ets}  EMERGENCY TRIP`, "h-tagname")}
+        ${state(552, 82, etsBad ? "BYPASSED" : on(c, "sis.tripped") ? "TRIPPED" : "ARMED", etsBad, "start")}
+        ${box(c, 552, 94, "sis.current", 1, 0, "A", { w: 48 })}
+        ${alarmMark(c, "ets", 688, 54)}`,
+        { x: 534, y: 34, w: 172, h: 92 },
+      )}
+    </svg>`;
+  };
+  return { objects, alarms, svg };
+}
+
+const SCREENS: Record<string, (sim: Sim) => ScreenDef> = { "water-tank": water, "gas-compressor": gas, "dc-cooling": dc, "metro-line": metro };
 
 /** The HMI screen for a site's process model, if ZoneSim has one. */
 export function screenFor(sim: Sim): ScreenDef | undefined {

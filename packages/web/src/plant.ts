@@ -3,7 +3,7 @@
 // Values come from the process model's readouts, so every plant fits; each
 // built-in process also gets a picture of its own.
 
-import { WaterTank, GasCompressor, DcCooling, type Sim } from "@zonesim/core";
+import { WaterTank, GasCompressor, DcCooling, MetroLine, type Sim } from "@zonesim/core";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
@@ -133,11 +133,61 @@ function dcMimic(sim: Sim, d: DcCooling): string {
   </svg>`;
 }
 
+function metroMimic(sim: Sim, m: MetroLine): string {
+  const t = m.tags;
+  const p = m.params;
+  const ets = sim.safetyName ?? "ETS";
+  const live = m.energized;
+  const tx0 = 170;
+  const tx1 = 400;
+  const hot = m.tunnelTemp > p.heatStress ? "bad" : m.tunnelTemp > p.hotAlarm ? "warn" : "ok";
+  // Trains: moving ones loop the two tracks, stranded ones sit in the tunnel, held ones wait at the platforms.
+  const trains: string[] = [];
+  const train = (x: number, y: number, cls: string) => `<rect x="${x.toFixed(1)}" y="${y - 6}" width="34" height="12" rx="3" class="train ${cls}"/>`;
+  const span = 460;
+  if (m.moving > 0)
+    for (let i = 0; i < m.moving; i++) {
+      const eastbound = i % 2 === 0;
+      const pos = (m.time * 9 + (i * span) / m.moving) % span;
+      trains.push(train(eastbound ? 40 + pos : 500 - pos - 34, eastbound ? 120 : 150, "moving"));
+    }
+  else if (m.stranded > 0)
+    for (let i = 0; i < m.stranded; i++) trains.push(train(tx0 + 14 + (i >> 1) * 90 + (i % 2) * 40, i % 2 === 0 ? 120 : 150, "stranded"));
+  if (m.moving === 0 && m.inService > 0) {
+    const atPlatforms = m.inService - m.stranded;
+    for (let i = 0; i < atPlatforms; i++) trains.push(train(i % 2 === 0 ? 48 + (i >> 2) * 38 : 452 - (i >> 2) * 38, i % 2 === 0 ? 120 : 150, "held"));
+  }
+  const fan = (x: number, on: boolean, name: string) =>
+    `<g class="fan ${on ? "on" : "off"}"><circle cx="${x}" cy="72" r="13"/><path d="M${x} 72 L${x - 8} 64 M${x} 72 L${x + 9} 66 M${x} 72 L${x - 1} 83"/><text x="${x}" y="98" text-anchor="middle" class="label">${esc(name)}</text></g>`;
+  const breaker = m.feederClosed ? `<path d="M118 40 L138 40" class="switch closed"/>` : `<path d="M118 40 L134 28" class="switch open"/>`;
+  return `<svg class="mimic" viewBox="0 0 540 250" width="100%">
+    <g class="box ${m.rectRunning ? "on" : "off"}"><rect x="20" y="20" width="78" height="40" rx="4"/><text x="59" y="37" text-anchor="middle" class="label">${esc(t.substation ?? "TPSS")}</text><text x="59" y="52" text-anchor="middle" class="label">${esc(t.rectifier ?? "rectifier")} ${m.rectRunning ? "on" : "OFF"}</text></g>
+    <path d="M98 40 H118" class="feed${live ? " live" : ""}"/>
+    ${breaker}<circle cx="118" cy="40" r="3" class="node"/><circle cx="138" cy="40" r="3" class="node"/>
+    <text x="128" y="20" text-anchor="middle" class="label">${esc(t.feeder ?? "CB")} ${m.feederClosed ? "closed" : m.tripped ? "TRIPPED" : "open"}</text>
+    <path d="M138 40 H150 V126" class="feed${live ? " live" : ""}"/>
+    <rect x="${tx0}" y="56" width="${tx1 - tx0}" height="104" rx="10" class="tunnel ${hot}"/>
+    <text x="${(tx0 + tx1) / 2}" y="174" text-anchor="middle" class="label">${esc(t.tunnel ?? "tunnel")}  ${m.tunnelTemp.toFixed(1)} °C</text>
+    <path d="M30 120 H510" class="rail${live ? " live" : ""}"/>
+    <path d="M30 150 H510" class="rail${live ? " live" : ""}"/>
+    <rect x="34" y="98" width="110" height="8" class="platform"/><rect x="396" y="98" width="110" height="8" class="platform"/>
+    <text x="89" y="94" text-anchor="middle" class="label">Central</text><text x="451" y="94" text-anchor="middle" class="label">Quay</text>
+    ${trains.join("")}
+    ${fan(tx0 + 24, m.fan1, t.fan1 ?? "fan 1")}${fan(tx1 - 24, m.fan2, t.fan2 ?? "fan 2")}
+    ${m.fireMode ? `<text x="${(tx0 + tx1) / 2}" y="76" text-anchor="middle" class="label alert">FIRE MODE</text>` : ""}
+    ${m.crewOnTrack ? `<g class="crew${live ? " danger" : ""}"><circle cx="300" cy="134" r="5"/><text x="300" y="196" text-anchor="middle" class="label${live ? " alert" : ""}">${live ? "CREW ON A LIVE RAIL" : "work crew on the track"}</text></g>` : ""}
+    ${shield(500, 20, m.bypass ? "bad" : m.etsTripped ? "warn" : "ok", ets, m.bypass ? "BYPASSED" : m.etsTripped ? "TRIPPED" : "armed")}
+    <text x="10" y="222" class="label">${Math.round(m.voltage)} V, ${Math.round(m.current)} A (trips at ${m.overcurrentSp} A), ${m.moving} trains moving${m.stranded ? `, ${m.stranded} STRANDED` : ""}</text>
+    <text x="10" y="240" class="label">Fans ${m.fireMode ? "in FIRE MODE" : m.ventAuto ? `auto, start at ${(m.fanStartSp / 10).toFixed(1)} °C` : "MANUAL"}${m.strandedSeconds > 0 ? `, trains stranded for ${Math.round(m.strandedSeconds)} s so far` : ""}</text>
+  </svg>`;
+}
+
 function picture(sim: Sim): string {
   const m = sim.plant;
   if (m instanceof WaterTank) return waterMimic(sim, m);
   if (m instanceof GasCompressor) return gasMimic(sim, m);
   if (m instanceof DcCooling) return dcMimic(sim, m);
+  if (m instanceof MetroLine) return metroMimic(sim, m);
   return "";
 }
 

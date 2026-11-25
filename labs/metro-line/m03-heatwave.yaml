@@ -1,0 +1,39 @@
+id: m03-heatwave
+site: metro-line
+title: Start the tunnel fans earlier in a heatwave
+level: beginner
+minutes: 8
+topic: Modbus basics
+intro: |
+  A heatwave is forecast and the tunnel runs warm. Operations want the first
+  tunnel fan to start at ${param.fanStart-2} °C instead of
+  ${param.fanStart} °C. Station staff make this change from the control room
+  workstation ${hmi}, which writes a holding register on the tunnel
+  ventilation controller ${tvs} with function code 6.
+tasks:
+  - From ${hmi}, set the fan start temperature (${tvs} holding register ${tvs:setpoint.fan_start}) to ${param.fanStart-2} °C. The value is in tenths of a degree, so the raw value is ${param.fanStart*10-20}.
+  - Read the register back to confirm the controller took it.
+  - Run `wait 120` and then `plant`. A tunnel fan is running now.
+checks:
+  - name: The fan start temperature is ${param.fanStart-2} °C (hr ${tvs:setpoint.fan_start} = ${param.fanStart*10-20})
+    register: { host: "${tvs}", signal: setpoint.fan_start, equals: "${param.fanStart*10-20}" }
+  - name: A tunnel fan is running
+    state: { path: plant.fansRunning, gte: 1 }
+  - name: The IDS raised no alert, because ${hmi} is an expected writer
+    alert: { title: Unauthorized, exists: false }
+hints:
+  - "`modbus write ${tvs} hr ${tvs:setpoint.fan_start} ${param.fanStart*10-20}` sends function code 6 to holding register ${tvs:setpoint.fan_start}."
+  - "Run it on the control room workstation: `ssh ${hmi} modbus write ${tvs} hr ${tvs:setpoint.fan_start} ${param.fanStart*10-20}`, then `wait 120`."
+  - "Or work like station staff: open the HMI tab, click the tunnel fans, type ${param.fanStart-2} as the fan start temperature and press Set. Then `wait 120`."
+solution:
+  - ssh ${hmi} modbus write ${tvs} hr ${tvs:setpoint.fan_start} ${param.fanStart*10-20}
+  - ssh ${hmi} modbus read ${tvs} hr ${tvs:setpoint.fan_start}
+  - wait 120
+learned: |
+  The tunnel ventilation controller trusts any Modbus write it receives. The
+  IDS stayed quiet because ${hmi} is one of the hosts that normally write to
+  ${tvs}. The same write from the office would be an attack: a fan start
+  temperature of 60 °C would leave stranded passengers without ventilation.
+refs:
+  - Modbus Application Protocol Specification v1.1b3
+  - NFPA 130 (fixed guideway transit and passenger rail systems)

@@ -1,0 +1,44 @@
+id: m01-line-tour
+site: metro-line
+title: Get to know the metro line
+level: beginner
+minutes: 8
+topic: Asset inventory
+intro: |
+  You have just joined ${site.name} as its OT security engineer. Your section
+  of the ${tag.line} runs ${param.trains} trains on a ${param.lineVoltage} V
+  third rail fed by substation ${tag.substation}, through the
+  ${tag.tunnel}. Before you change anything, find out what is there.
+
+  You are on the console, an out-of-band management station. It sends no
+  traffic on the station network. To act from a host, log in to it with ssh,
+  or run one command there with `ssh HOST COMMAND`.
+tasks:
+  - Run `hosts`. Which three hosts are controllers? Which hosts are not at the station at all?
+  - Run `plant` and `hmi` to see the trains, the traction power, the tunnel and what the station control room sees.
+  - "Ask the tunnel ventilation controller for its vendor, model and firmware from the engineering workstation: `ssh ${ews} modbus info ${tvs}`."
+  - Write the tunnel ventilation controller's firmware version into firmware.txt.
+  - Write the IP address of the emergency trip system ${sis} into ets-ip.txt.
+checks:
+  - name: firmware.txt holds the tunnel ventilation controller's firmware version
+    file: { path: firmware.txt, matches: '${tvs.firmware}' }
+  - name: ets-ip.txt holds the IP address of ${sis}
+    file: { path: ets-ip.txt, matches: '${sis.ip}' }
+hints:
+  - "`hosts -o wide` adds each host's role and operating system. The OCC, the backup OCC and the traction power maker are remote."
+  - "`modbus info ${tvs}` reads the device identification (function code 43). Look for MajorMinorRevision."
+  - "`echo ${tvs.firmware} > firmware.txt` writes a file, `cat firmware.txt` shows it."
+solution:
+  - ssh ${ews} modbus info ${tvs}
+  - echo ${tvs.firmware} > firmware.txt
+  - echo ${sis.ip} > ets-ip.txt
+learned: |
+  A metro station's control system reaches well beyond the station: the
+  operations control centre runs the line from kilometres away, a backup
+  control centre stands ready to take over, and the traction power maker
+  supports its equipment from the internet. The emergency trip system is the
+  one that protects people: it keeps the third rail dead while a crew works
+  on the track.
+refs:
+  - IEC 62443-2-1 (asset inventory)
+  - CLC/TS 50701 (railway applications, cybersecurity)

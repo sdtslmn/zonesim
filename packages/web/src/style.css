@@ -960,6 +960,110 @@ ul.alert-list li {
   border-left-color: var(--warn) !important;
 }
 
+/* ---------------------------------------------------------------- metro picture */
+
+svg.mimic .rail {
+  stroke: #9aa3ad;
+  stroke-width: 3;
+}
+
+svg.mimic .rail.live {
+  stroke: #d08a1c;
+}
+
+svg.mimic .feed {
+  fill: none;
+  stroke: #9aa3ad;
+  stroke-width: 2.5;
+}
+
+svg.mimic .feed.live {
+  stroke: #d08a1c;
+}
+
+svg.mimic .switch {
+  stroke: #3d4652;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+svg.mimic .node {
+  fill: #3d4652;
+}
+
+svg.mimic .tunnel {
+  fill: #eef1f4;
+  stroke: #b7c0ca;
+  stroke-width: 1.5;
+}
+
+svg.mimic .tunnel.warn {
+  fill: #fff4e0;
+}
+
+svg.mimic .tunnel.bad {
+  fill: #fdecec;
+  stroke: var(--bad);
+}
+
+svg.mimic .platform {
+  fill: #c9d1da;
+}
+
+svg.mimic .train {
+  stroke-width: 1.2;
+}
+
+svg.mimic .train.moving {
+  fill: #2f80c4;
+  stroke: #1f5f96;
+}
+
+svg.mimic .train.held {
+  fill: #9fc3e2;
+  stroke: #5f8db5;
+}
+
+svg.mimic .train.stranded {
+  fill: #fdecec;
+  stroke: var(--bad);
+  stroke-width: 2;
+}
+
+svg.mimic .fan circle {
+  fill: #fff;
+  stroke: #5f6b7a;
+  stroke-width: 2;
+}
+
+svg.mimic .fan path {
+  stroke: #5f6b7a;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+svg.mimic .fan.on circle {
+  fill: #e3f3f1;
+  stroke: var(--accent);
+}
+
+svg.mimic .fan.on path {
+  stroke: var(--accent);
+}
+
+svg.mimic .crew circle {
+  fill: var(--warn);
+}
+
+svg.mimic .crew.danger circle {
+  fill: var(--bad);
+}
+
+svg.mimic .label.alert {
+  fill: var(--bad);
+  font-weight: 700;
+}
+
 /* ---------------------------------------------------------------- gas and data centre pictures */
 
 svg.mimic .big.small {
@@ -1694,6 +1798,64 @@ details.why summary,
 .hmi-svg .h-panel.bad {
   stroke: var(--h-p1);
   stroke-width: 2;
+}
+
+.hmi-svg .h-rail {
+  stroke: #8a8f96;
+  stroke-width: 3;
+}
+
+.hmi-svg .h-rail.live {
+  stroke: #3f4348;
+  stroke-width: 4;
+}
+
+.hmi-svg .h-platform {
+  fill: #b8bcc2;
+}
+
+.hmi-svg .h-switch {
+  stroke: var(--h-run);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.hmi-svg .h-node {
+  fill: var(--h-run);
+}
+
+.hmi-svg .h-train.run {
+  fill: var(--h-run);
+}
+
+.hmi-svg .h-train.stuck {
+  fill: #fff;
+  stroke: var(--h-p1);
+  stroke-width: 2;
+}
+
+.hmi-svg .h-fan circle {
+  fill: #f2f3f4;
+  stroke: var(--h-run);
+  stroke-width: 2;
+}
+
+.hmi-svg .h-fan path {
+  stroke: var(--h-run);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.hmi-svg .h-fan.run circle {
+  fill: var(--h-run);
+}
+
+.hmi-svg .h-fan.run path {
+  stroke: #f2f3f4;
+}
+
+.hmi-svg .h-fan.stale circle {
+  stroke: var(--h-stale);
 }
 
 .hmi-svg .h-obj {

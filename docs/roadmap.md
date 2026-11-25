@@ -3,6 +3,22 @@
 ZoneSim is being reworked around jobs: the people who work on a plant. Each
 release adds one of them.
 
+## In 0.5
+
+- A fourth plant, the Meridian Line metro: a traction power substation
+  (rectifier, 750 V DC feeder breaker with overcurrent protection and auto
+  reclose), trains that are stranded in the tunnel when the line goes dead,
+  tunnel ventilation with a fire mode, and an emergency trip system that
+  keeps the third rail dead while a crew works on the track
+- The OCC and the backup OCC run the line over the metro WAN; the traction
+  power maker supports it from the internet
+- 11 metro labs, from a tour to an attack that strands trains, a lowered
+  protection setting that keeps tripping the feeder, a live rail under a
+  track crew, and a full zone and conduit design
+- An HMI screen for the station control room, which runs both the traction
+  power and the tunnel fans (the HMI now writes to every controller it is a
+  normal writer for)
+
 ## In 0.4
 
 - An HMI screen for each plant, in the high-performance HMI style: grey and
@@ -88,6 +104,7 @@ ZoneSim stays a standalone project with no dependencies on other simulator
 repos.
 
 - More plants: an electrical substation (with DNP3 or IEC 61850) and a wastewater pumping station
+- Metro: signalling interfaces, platform screen doors, and IEC 60870-5-104 for the traction power SCADA
 - DNP3 next to Modbus, and a second site connected over a WAN
 - More scenarios: ransomware spreading from the office, an insider on the
   engineering workstation, a rogue device in the control zone

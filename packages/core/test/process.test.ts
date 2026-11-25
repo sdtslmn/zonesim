@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WATER_TANK, WaterTank, Controller, builtinSite, GAS_COMPRESSOR, GasCompressor, DC_COOLING, DcCooling } from "../src/index.js";
+import { WATER_TANK, WaterTank, Controller, builtinSite, GAS_COMPRESSOR, GasCompressor, DC_COOLING, DcCooling, METRO_LINE, MetroLine } from "../src/index.js";
 
 const site = builtinSite();
 
@@ -191,5 +191,92 @@ describe("data centre cooling process", () => {
     steps(d, 5);
     expect(d.released).toBe(true);
     expect(d.get("load.it")).toBe(0);
+  });
+});
+
+describe("metro line process", () => {
+  const metro = () => METRO_LINE.create(defaults(METRO_LINE), METRO_LINE.tags) as MetroLine;
+
+  it("runs every train on a live line with the fans off", () => {
+    const m = metro();
+    steps(m, 300);
+    expect(m.moving).toBe(6);
+    expect(m.voltage).toBeGreaterThan(650);
+    expect(m.tunnelTemp).toBeLessThan(30);
+    expect(m.fansRunning).toBe(0);
+    expect(m.alarms()).toHaveLength(0);
+  });
+
+  it("strands trains in the tunnel when the feeder opens, and the tunnel heats without fans", () => {
+    const m = metro();
+    m.set("vent.auto", 0);
+    m.set("feeder.command", 0);
+    steps(m, 360);
+    expect(m.stranded).toBe(4);
+    expect(m.tunnelTemp).toBeGreaterThan(40);
+    expect(m.alarms().map((a) => a.id)).toContain("heat-stress");
+    m.set("feeder.command", 1);
+    steps(m, 30);
+    expect(m.moving).toBe(6);
+    expect(m.stranded).toBe(0);
+  });
+
+  it("keeps the tunnel cool with the fans in auto while trains are stranded", () => {
+    const m = metro();
+    m.set("feeder.command", 0);
+    steps(m, 600);
+    expect(m.fansRunning).toBeGreaterThan(0);
+    expect(m.tunnelTemp).toBeLessThan(32);
+  });
+
+  it("trips on a low overcurrent setting, recloses once, then locks out", () => {
+    const m = metro();
+    m.set("setpoint.overcurrent", 1500);
+    steps(m, 60);
+    expect(m.trips).toBe(2);
+    expect(m.feederClosed).toBe(false);
+    expect(m.get("alarm.trip")).toBe(1);
+    m.set("setpoint.overcurrent", 5000);
+    m.set("feeder.command", 1);
+    steps(m, 60);
+    expect(m.feederClosed).toBe(true);
+    expect(m.trips).toBe(2);
+  });
+
+  it("keeps the rail dead during a possession, unless the trip system is bypassed", () => {
+    const m = metro();
+    m.set("possession", 1);
+    steps(m, 10);
+    expect(m.energized).toBe(false);
+    expect(m.etsTripped).toBe(true);
+    expect(m.moving).toBe(0);
+    // The controller refuses to close; the crew is still on the track if the possession is cleared.
+    m.set("possession", 0);
+    m.set("feeder.command", 1);
+    steps(m, 5);
+    expect(m.feederClosed).toBe(true);
+    expect(m.energized).toBe(false);
+    m.set("sis.bypass", 1);
+    steps(m, 5);
+    expect(m.energized).toBe(true);
+    expect(m.alarms()[0].id).toBe("live-crew");
+  });
+
+  it("holds trains at stations in fire mode", () => {
+    const m = metro();
+    m.set("fire.mode", 1);
+    steps(m, 30);
+    expect(m.moving).toBe(0);
+    expect(m.stranded).toBe(0);
+    expect(m.fansRunning).toBe(2);
+  });
+
+  it("reports when a short circuit would not be cleared", () => {
+    const m = metro();
+    m.set("setpoint.overcurrent", 20000);
+    expect(m.unprotected).toBe(false);
+    m.set("sis.bypass", 1);
+    expect(m.unprotected).toBe(true);
+    expect(m.snapshot().protected).toBe(false);
   });
 });

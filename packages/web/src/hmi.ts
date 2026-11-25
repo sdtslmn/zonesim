@@ -140,7 +140,7 @@ export class HmiView {
     set("hmi-head", this.headHtml(sim));
     set("hmi-screen", this.screenHtml(sim, c));
     set("hmi-banner", this.bannerHtml());
-    set("hmi-foot", `This is the operator screen of <b>${esc(hmi.host)}</b>. It shows what ${esc(hmi.host)} last read from the controllers, and every button sends a Modbus write from ${esc(hmi.host)} to ${esc(hmi.device)} across the network. The <a href="#" data-goto="plant">Plant</a> tab shows the real process.`);
+    set("hmi-foot", `This is the operator screen of <b>${esc(hmi.host)}</b>. It shows what ${esc(hmi.host)} last read from the controllers, and every button sends a Modbus write from ${esc(hmi.host)} to the controller across the network. The <a href="#" data-goto="plant">Plant</a> tab shows the real process.`);
     this.renderFace(sim, c);
   }
 
@@ -207,8 +207,9 @@ export class HmiView {
   }
 
   private blockedWhy(sim: Sim, c: Ctx, ctl: Control): string | undefined {
-    if (!sim.hmiWritable(ctl.sig)) return `${sim.site.hmi!.device} has no writable point for this on this site.`;
-    if (!c.fresh(ctl.sig)) return `No communication with ${sim.site.hmi!.device}. Commands are disabled until it answers again.`;
+    const dev = sim.hmiSource(ctl.sig)?.device ?? sim.site.hmi!.device;
+    if (!sim.hmiWritable(ctl.sig)) return `The HMI cannot write this on this site: ${dev} has no point for it, or the HMI is not one of its normal writers.`;
+    if (!c.fresh(ctl.sig)) return `No communication with ${dev}. Commands are disabled until it answers again.`;
     return ctl.blocked?.(c);
   }
 

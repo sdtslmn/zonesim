@@ -2,7 +2,7 @@ export { VERSION } from "./version.js";
 export { Sim, STEP, describeRequest, type SimOptions, type TrafficEvent, type Conversation, type Alert, type FwLogEntry, type SimSnapshot, type Severity, type HmiAction, type HmiSource } from "./sim.js";
 export { FC_NAMES, READ_FCS, WRITE_FCS, EXCEPTIONS, TABLES, TABLE_NAMES, tableFor, type ModbusRequest, type ModbusReply, type PointTable } from "./modbus.js";
 export { Controller } from "./device.js";
-export { PROCESS_MODELS, WaterTank, WATER_TANK, GasCompressor, GAS_COMPRESSOR, DcCooling, DC_COOLING, type ProcessModel, type ProcessModelType, type SignalSpec, type ParamSpec, type PlantAlarm, type Readout, type ReadoutState, type TrendSpec } from "./process/index.js";
+export { PROCESS_MODELS, WaterTank, WATER_TANK, GasCompressor, GAS_COMPRESSOR, DcCooling, DC_COOLING, MetroLine, METRO_LINE, type ProcessModel, type ProcessModelType, type SignalSpec, type ParamSpec, type PlantAlarm, type Readout, type ReadoutState, type TrendSpec } from "./process/index.js";
 export { Network, SERVICES, SERVICE_NAMES, LEVEL_NAMES, ruleText, endpointText, type Host, type Zone, type Conduit, type Rule, type Endpoint, type Verdict, type ServiceName } from "./network.js";
 export { requiredFlowStatus, riskChecks, RISK_IDS, type FlowStatus, type RiskCheck } from "./checks.js";
 export { withSwitchVendor, SWITCH_DEFAULTS, SWITCH_VENDORS, FIREWALL_VENDORS, type SwitchVendor, type FirewallVendor } from "./site.js";
