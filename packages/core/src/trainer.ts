@@ -49,6 +49,8 @@ ${C.bold("Design zones and conduits")}
 ${C.bold("Monitor and investigate")}
   flows                          who talks to whom, and what got blocked
   alerts [show ID | ack ID]      alerts from the IDS sensor and the process
+  ids [mode|links|baseline]      the IDS sensor: learning or protecting, its baseline
+  assets [HOST]                  the asset inventory the sensor built from traffic
   report                         design review: data flows and security checks
   wait SECONDS                   fast-forward the plant
 ${C.bold("Labs")}
@@ -224,6 +226,10 @@ export class Trainer {
       else if (cmd === "modbus" && words.length === 3) candidates = [...this.sim.devices.keys()];
       else if (cmd === "modbus" && words.length === 4) candidates = sub === "write" ? ["coil", "hr"] : ["coil", "di", "ir", "hr"];
       else if (cmd === "alerts" && words.length === 2) candidates = ["show", "ack", "--all"];
+      else if (cmd === "ids" && words.length === 2) candidates = ["mode", "links", "baseline", "learn"];
+      else if (cmd === "ids" && words[1] === "mode" && words.length === 3) candidates = ["learning", "protecting"];
+      else if (cmd === "ids" && words[1] === "learn" && words.length === 3) candidates = this.sim.alerts.filter((a) => a.anomaly && !a.acked).map((a) => a.id);
+      else if (cmd === "assets" && words.length === 2) candidates = this.sim.net.hosts.map((h) => h.name);
       else if (cmd === "alerts" && words.length === 3) candidates = [...this.sim.alerts.map((a) => a.id), "all"];
       else if (cmd === "ssh" && words.length === 2 && !this.shell.host) candidates = [...this.sim.infra.devices.map((d) => d.name), ...hostNames];
       else if (["ssh", "rdp", "ping", "nmap", "test", "host", "flows"].includes(cmd)) candidates = cmd === "host" && words.length === 2 ? ["show", "config"] : hostNames;

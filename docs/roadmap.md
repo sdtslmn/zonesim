@@ -3,6 +3,20 @@
 ZoneSim is being reworked around jobs: the people who work on a plant. Each
 release adds one of them.
 
+## In 0.7
+
+- The SOC analyst job gets an OT monitoring console, the Monitor tab:
+  a dashboard, alerts, an asset inventory, links and the packets themselves
+- The IDS sensor learned a baseline while it was commissioned (the plant's
+  polling and data flows). In protecting mode a new link or a new Modbus
+  function code raises an anomaly alert; in learning mode everything it sees
+  becomes normal
+- Alerts are mapped to MITRE ATT&CK for ICS and say what to check first.
+  Anomaly alerts can be learned as normal when they turn out to be planned
+- The asset inventory knows a controller's vendor, model and firmware once
+  the sensor has seen a device identification reply
+- New terminal commands: `ids` (mode, links, baseline, learn) and `assets`
+
 ## In 0.6
 
 - The metro now follows how metros are run: the PCS and TVCS SCADA, the
@@ -69,9 +83,6 @@ release adds one of them.
 
 ## Next, by job
 
-- SOC analyst: an OT monitoring console (asset inventory, communication
-  baseline, alerts with packet details) in the style of the OT network
-  monitoring tools used on site
 - Labs rewritten per job, so a lab says who you are and where you work from
 - Network engineer: more firewall brands
 

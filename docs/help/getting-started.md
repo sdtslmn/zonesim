@@ -31,8 +31,9 @@ Nothing leaves your browser and nothing real is touched.
   works from and offers the commands they use most.
 - **Top right**: the **Map** of the network with live traffic, the **HMI**
   (the operator screen, see [The HMI screen](hmi.md)), and the **Plant** view
-  with the real process, data flows, design checks and alerts. The strip
-  above them shows the plant at a glance.
+  with the real process, data flows, design checks and alerts, and the
+  **Monitor**, the SOC analyst's console (see [The OT monitor](monitor.md)).
+  The strip above them shows the plant at a glance.
 - **Bottom**: the **terminal**. Drag its top edge to make it taller or
   shorter, or fold it away with the arrow button. ZoneSim remembers your
   layout.

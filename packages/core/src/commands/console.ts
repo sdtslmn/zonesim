@@ -9,6 +9,8 @@ import { openSession, cliName, vendorName } from "../devices/index.js";
 import type { Sim } from "../sim.js";
 import { C, UserError, table, clock, ago, wrapText } from "../util.js";
 import type { Severity } from "../sim.js";
+import { idsCmd, assetsCmd } from "./monitor.js";
+import { attackText } from "../attack.js";
 
 const levelText = (l: number) => `${l} ${LEVEL_NAMES[String(l)] ?? ""}`.trim();
 
@@ -472,14 +474,14 @@ const flows: CommandFn = (args, { io, sim }) => {
 const alerts: CommandFn = (args, { io, sim }) => {
   const [sub, ...rest] = args;
   if (wantsHelp(args)) {
-    io.stdout("alerts               open alerts from the IDS sensor and the process\nalerts --all         include acknowledged alerts\nalerts show ID       details of one alert\nalerts ack ID|all    acknowledge (you have looked at it)\n");
+    io.stdout("alerts               open alerts from the IDS sensor and the process\nalerts --all         include acknowledged alerts\nalerts show ID       details of one alert\nalerts ack ID|all    acknowledge (you have looked at it)\nids learn ID         accept what an anomaly alert saw as normal\n");
     return 0;
   }
   if (sub === "show") {
     needArgs(rest, 1, "alerts show ID");
     const a = sim.alerts.find((x) => x.id.toLowerCase() === rest[0].toLowerCase());
     if (!a) throw new UserError(`no alert ${rest[0]}`);
-    io.stdout(`${C.bold(a.id)}  ${sev(a.severity)}  ${a.title}\n  First seen ${clock(a.t)}, last ${clock(a.lastT)}, ${a.count} time${a.count === 1 ? "" : "s"}${a.acked ? ", acknowledged" : ""}\n  Source:  ${a.source === "ids" ? "IDS sensor" : "process"}${a.src ? `\n  From:    ${a.src} (${sim.net.host(a.src)?.ip ?? "?"})` : ""}${a.dst ? `\n  To:      ${a.dst}` : ""}\n${wrapText(a.detail, 76, "  ")}\n`);
+    io.stdout(`${C.bold(a.id)}  ${sev(a.severity)}  ${a.title}\n  First seen ${clock(a.t)}, last ${clock(a.lastT)}, ${a.count} time${a.count === 1 ? "" : "s"}${a.learned ? ", learned as normal" : a.acked ? ", acknowledged" : ""}\n  Source:  ${a.source === "ids" ? (a.anomaly ? "IDS sensor, anomaly (outside the baseline)" : "IDS sensor, rule") : "process"}${a.src ? `\n  From:    ${a.src} (${sim.net.host(a.src)?.ip ?? "?"})` : ""}${a.dst ? `\n  To:      ${a.dst}` : ""}${a.attack?.length ? `\n  ATT&CK:  ${a.attack.map(attackText).join(", ")}` : ""}\n${wrapText(a.detail, 76, "  ")}\n${a.advice ? `${C.bold("  What to check")}\n${wrapText(a.advice, 76, "  ")}\n` : ""}`);
     return 0;
   }
   if (sub === "ack") {
@@ -496,7 +498,7 @@ const alerts: CommandFn = (args, { io, sim }) => {
     io.stdout(all ? "No alerts yet.\n" : "No open alerts.\n");
     return 0;
   }
-  const rows = list.map((a) => [a.id, clock(a.lastT), sev(a.severity), a.title + (a.count > 1 ? C.gray(` (x${a.count})`) : ""), a.src ?? "-", ...(all ? [a.acked ? "acked" : "open"] : [])]);
+  const rows = list.map((a) => [a.id, clock(a.lastT), sev(a.severity), a.title + (a.count > 1 ? C.gray(` (x${a.count})`) : ""), a.src ?? "-", ...(all ? [a.learned ? "learned" : a.acked ? "acked" : "open"] : [])]);
   io.stdout(table(["ID", "TIME", "SEVERITY", "ALERT", "FROM", ...(all ? ["STATE"] : [])], rows));
   io.stdout(C.gray(`alerts show ID for details, alerts ack ID once handled\n`));
   return 0;
@@ -661,6 +663,8 @@ export function registerConsole(shell: Shell): void {
   shell.register("test", con(test));
   shell.register("flows", con(flows));
   shell.register("alerts", con(alerts));
+  shell.register("ids", con(idsCmd, "the IDS sensor: mode, links, baseline"));
+  shell.register("assets", con(assetsCmd, "the asset inventory the IDS sensor built"));
   shell.register("report", con(report));
   shell.register("ssh", { run: ssh, where: "both" });
   shell.register("devices", con(devicesCmd, "the firewall and switches"));

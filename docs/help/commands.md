@@ -55,6 +55,12 @@ Services are `ssh`, `http`, `https`, `modbus`, `rdp`, or `any`.
 | `alerts` | alerts from the IDS sensor and the process |
 | `alerts show ID` | details of one alert |
 | `alerts ack ID`, `alerts ack all` | acknowledge alerts |
+| `ids` | the IDS sensor: mode, baseline, assets and open alerts |
+| `ids mode learning`, `ids mode protecting` | learn everything it sees, or alert on anything outside the baseline |
+| `ids links [--new]` | links the sensor has seen, and whether each is in the baseline |
+| `ids baseline`, `ids baseline delete N` | what the sensor treats as normal, and forgetting a learned link |
+| `ids learn ID` | accept what an anomaly alert saw as normal |
+| `assets`, `assets HOST` | the asset inventory the sensor built from traffic |
 | `report` | design review: required data flows and security checks |
 | `wait SECONDS` | fast-forward the plant |
 

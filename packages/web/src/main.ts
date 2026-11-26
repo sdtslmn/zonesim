@@ -11,6 +11,7 @@ import { LineEditor } from "./line-editor";
 import { NetworkMap } from "./map";
 import { plantPanel, statusStrip } from "./plant";
 import { HmiView } from "./hmi";
+import { MonitorView } from "./monitor";
 import { helpPanel, HELP_PAGES } from "./help";
 import { jobBarHtml, jobFor, whereNow, JOB_IDS, type JobId } from "./jobs";
 import { listSites, siteText, isBuiltin, addSite, removeSite, setActiveSite, startSite, templateText, fetchSite, download } from "./sites";
@@ -207,7 +208,7 @@ new ResizeObserver(fitTerminal).observe($("terminal"));
 // ---------------------------------------------------------------- state
 
 type LeftTab = "labs" | "help" | "site";
-type RightTab = "map" | "plant" | "hmi";
+type RightTab = "map" | "plant" | "hmi" | "monitor";
 
 const state = {
   left: "labs" as LeftTab,
@@ -290,6 +291,14 @@ const trainer: Trainer = new Trainer({
 
 const map = new NetworkMap(() => trainer.sim);
 const hmi = new HmiView(
+  () => trainer.sim,
+  () => {
+    const slot = $("strip-slot");
+    const html = statusStrip(trainer.sim);
+    if (slot.innerHTML !== html) slot.innerHTML = html;
+  },
+);
+const monitor = new MonitorView(
   () => trainer.sim,
   () => {
     const slot = $("strip-slot");
@@ -425,7 +434,7 @@ function selectTab(t: string): void {
     state.left = t;
     state.pane = "left";
     renderSide();
-  } else if (t === "map" || t === "plant" || t === "hmi") {
+  } else if (t === "map" || t === "plant" || t === "hmi" || t === "monitor") {
     state.right = t;
     state.pane = "right";
     renderView();
@@ -593,7 +602,15 @@ async function setBrand(sw: string, vendor: SwitchVendor): Promise<void> {
 // ---------------------------------------------------------------- right panel
 
 function renderView(): void {
-  if (state.right === "map") {
+  if (state.right !== "monitor") monitor.unmount();
+  if (state.right === "monitor") {
+    map.unmount();
+    hmi.unmount();
+    if (!(monitor.mounted && view.querySelector("#mon-root"))) {
+      view.innerHTML = `<div id="mon-root"></div>`;
+      monitor.mount(view.querySelector<HTMLElement>("#mon-root")!);
+    } else monitor.refresh();
+  } else if (state.right === "map") {
     hmi.unmount();
     if (!(map.mounted && view.querySelector("#map-root"))) {
       view.innerHTML = `<div id="map-root"></div>`;
@@ -625,6 +642,7 @@ function refreshLive(): void {
   if (slot.innerHTML !== html) slot.innerHTML = html;
   if (state.right === "map") map.refresh();
   else if (state.right === "hmi") hmi.refresh();
+  else if (state.right === "monitor") monitor.refresh();
   else renderView();
 }
 

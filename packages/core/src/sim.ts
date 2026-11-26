@@ -14,6 +14,7 @@ import { Controller } from "./device.js";
 import { builtinSite } from "./sites/index.js";
 import type { Site, SiteFlow } from "./site.js";
 import { UserError } from "./util.js";
+import { Sensor, fcText, linkText, type Anomaly, type LinkObs } from "./sensor.js";
 
 export const STEP = 0.5;
 /** Longest stretch of time the plant catches up on at once (e.g. after a laptop sleeps). */
@@ -43,6 +44,8 @@ export interface TrafficEvent {
   srcZone?: string;
   dstZone?: string;
   background: boolean;
+  /** What the request did, e.g. "write single coil (fc 5): coil 0 = 0". */
+  detail?: string;
 }
 
 export interface Conversation {
@@ -74,7 +77,29 @@ export interface Alert {
   acked: boolean;
   source: "ids" | "process";
   key: string;
+  /** MITRE ATT&CK for ICS technique IDs. */
+  attack?: string[];
+  /** What an analyst should check first. */
+  advice?: string;
+  /** For anomaly alerts: the links and function codes outside the baseline. */
+  anomaly?: LinkObs[];
+  /** Closed by learning what it saw into the sensor's baseline. */
+  learned?: boolean;
 }
+
+export interface RaiseOptions {
+  severity: Severity;
+  title: string;
+  detail: string;
+  src?: string;
+  dst?: string;
+  source: "ids" | "process";
+  attack?: string[];
+  advice?: string;
+  anomaly?: LinkObs[];
+}
+
+const SEV_RANK: Record<Severity, number> = { low: 0, medium: 1, high: 2, critical: 3 };
 
 export interface FwLogEntry {
   t: number;
@@ -113,6 +138,8 @@ export class Sim {
   /** Switches and the firewall: the devices that carry the zones and conduits. */
   readonly infra: Infra;
   readonly devices = new Map<string, Controller>();
+  /** The passive OT monitoring sensor on a mirror port. */
+  readonly sensor: Sensor;
   /** Plant time in seconds since the simulation started. */
   t = 0;
   events: TrafficEvent[] = [];
@@ -146,6 +173,7 @@ export class Sim {
     this.plant = type.create(this.site.process.params, this.site.process.tags);
     this.net = new Network(this.site);
     this.infra = new Infra(this.site, this.net);
+    this.sensor = new Sensor(this.site);
     for (const [host, def] of Object.entries(this.site.devices)) this.devices.set(host, new Controller(host, def, this.plant));
     for (const c of this.devices.values()) for (const t of ["coil", "di", "ir", "hr"] as const) for (const p of c.def.points[t]) this.hmiValues[p.signal] = this.plant.get(p.signal);
     this.clock = opts.clock ?? (() => Date.now());
@@ -244,7 +272,7 @@ export class Sim {
     });
     if (hmi) {
       const commOk = this.t < hmi.timeout || this.t - (this.hmiLast[hmi.device] ?? 0) <= hmi.timeout;
-      if (!commOk && this.hmiCommOk) this.raise({ severity: "medium", title: `HMI lost communication with ${hmi.device}`, detail: `${hmiHost} has had no answer from ${hmi.device} for more than ${hmi.timeout} seconds. Operators are blind.`, src: hmiHost, dst: hmi.device, source: "process" });
+      if (!commOk && this.hmiCommOk) this.raise({ severity: "medium", title: `HMI lost communication with ${hmi.device}`, detail: `${hmiHost} has had no answer from ${hmi.device} for more than ${hmi.timeout} seconds. Operators are blind.`, src: hmiHost, dst: hmi.device, source: "process", advice: `Check the path from ${hmiHost} to ${hmi.device}: the conduit rules (fw log shows what was blocked) and both switch ports.` });
       this.hmiCommOk = commOk;
     }
   }
@@ -399,7 +427,7 @@ export class Sim {
     const dst = this.net.needHost(dstRef);
     const v = this.net.evaluate(src, dst, service, opts.fc, { count: true });
     const background = !!opts.background;
-    this.events.push({ seq: ++this.seq, t: this.t, src: src.name, dst: dst.name, service, fc: opts.fc, allowed: v.allowed, delivered: v.delivered, reason: v.reason, conduit: v.conduit, rule: v.rule, srcZone: src.zone, dstZone: dst.zone, background });
+    this.events.push({ seq: ++this.seq, t: this.t, src: src.name, dst: dst.name, service, fc: opts.fc, allowed: v.allowed, delivered: v.delivered, reason: v.reason, conduit: v.conduit, rule: v.rule, srcZone: src.zone, dstZone: dst.zone, background, ...(opts.detail ? { detail: opts.detail } : {}) });
     if (this.events.length > 400) this.events.splice(0, this.events.length - 400);
 
     const key = `${src.name}>${dst.name}>${service}>${background ? "plant" : "you"}`;
@@ -430,31 +458,37 @@ export class Sim {
     if (!verdict.delivered) return { verdict };
     const dev = this.devices.get(dst.name);
     if (!dev) return { verdict };
-    return { verdict, reply: dev.modbus(req) };
+    const reply = dev.modbus(req);
+    if (reply.deviceId) this.sensor.identify(this.t, dst.name, reply.deviceId);
+    return { verdict, reply };
   }
 
   // ------------------------------------------------------------ detection
 
   /** The passive IDS sensor: it sees traffic that made it through the firewalls. */
   private inspect(src: Host, dst: Host, service: ServiceName, v: Verdict, fc: number | undefined, detail: string | undefined, background: boolean): void {
+    const anomalies = this.sensor.observe(this.t, src, dst, service, fc, v.delivered);
+    for (const a of anomalies) this.raiseAnomaly(a);
     if (background) return;
     const ids = this.site.ids;
+    const what = detail ?? `function code ${fc}`;
     if (service === "modbus" && fc !== undefined && WRITE_FCS.includes(fc) && this.devices.has(dst.name)) {
+      const impact = fc === 6 || fc === 16 ? "T0836" : "T0831";
       if (ids.safety.includes(dst.name)) {
-        this.raise({ severity: "critical", title: "Modbus write to the safety system", detail: `${src.name} (${src.ip}) sent ${detail ?? `function code ${fc}`} to ${dst.name}. Safety systems should never be written to over the plant network.`, src: src.name, dst: dst.name, source: "ids" });
+        this.raise({ severity: "critical", title: "Modbus write to the safety system", detail: `${src.name} (${src.ip}) sent ${what} to ${dst.name}. Safety systems should never be written to over the plant network.`, src: src.name, dst: dst.name, source: "ids", attack: ["T0855", "T0880"], advice: `Treat this as an incident. Check ${dst.name}'s bypass and trip settings now, find out who uses ${src.name}, and make the safety zone read-only at its conduit.` });
       } else if (this.site.standby && src.name === this.site.standby.backup && !this.takeover) {
         const sb = this.site.standby;
-        this.raise({ severity: "high", title: `Modbus write from the passive ${sb.backupName}`, detail: `${src.ip} (${src.name}) sent ${detail ?? `function code ${fc}`} to ${dst.name} while the ${sb.centre} has control. The ${sb.backupName} should send nothing until it takes over.`, src: src.name, dst: dst.name, source: "ids" });
+        this.raise({ severity: "high", title: `Modbus write from the passive ${sb.backupName}`, detail: `${src.ip} (${src.name}) sent ${what} to ${dst.name} while the ${sb.centre} has control. The ${sb.backupName} should send nothing until it takes over.`, src: src.name, dst: dst.name, source: "ids", attack: ["T0855", impact], advice: `Ask the ${sb.centre} whether a takeover is under way. If not, check what changed on ${dst.name} and switch the ${sb.backupName}'s firewall rules off.` });
       } else if (!(ids.writers[dst.name] ?? []).includes(src.name)) {
         const normal = ids.writers[dst.name]?.length ? `Only ${ids.writers[dst.name].join(" and ")} normally write to this controller.` : "Nothing normally writes to this controller.";
-        this.raise({ severity: "high", title: `Unauthorized Modbus write to ${dst.name}`, detail: `${src.ip} sent ${detail ?? `function code ${fc}`} to ${dst.name}. ${normal}`, src: src.name, dst: dst.name, source: "ids" });
+        this.raise({ severity: "high", title: `Unauthorized Modbus write to ${dst.name}`, detail: `${src.ip} sent ${what} to ${dst.name}. ${normal}`, src: src.name, dst: dst.name, source: "ids", attack: ["T0855", impact], advice: `Check what changed on ${dst.name} against the process, and put it right from the HMI. Find out who uses ${src.name}, then block it from ${dst.name} at the conduit while the plant's own flows keep working.` });
       }
     }
     if (service === "modbus" && fc === 43 && !ids.identify.includes(src.name)) {
-      this.raise({ severity: "low", title: "Modbus device identification read", detail: `${src.ip} asked ${dst.name} for its vendor, model and firmware (function code 43). This is typical reconnaissance.`, src: src.name, dst: dst.name, source: "ids" });
+      this.raise({ severity: "low", title: "Modbus device identification read", detail: `${src.ip} asked ${dst.name} for its vendor, model and firmware (function code 43). This is typical reconnaissance.`, src: src.name, dst: dst.name, source: "ids", attack: ["T0888"], advice: `Find out why ${src.name} is fingerprinting controllers. Only engineering needs this, and an attacker uses it to pick an exploit.` });
     }
     if ((service === "rdp" || service === "ssh") && src.level >= 5 && dst.level <= 3) {
-      this.raise({ severity: "high", title: "Remote access from the internet into the plant", detail: `${src.name} (${src.ip}) opened ${service} straight to ${dst.name}, a plant host, with no DMZ in between.`, src: src.name, dst: dst.name, source: "ids" });
+      this.raise({ severity: "high", title: "Remote access from the internet into the plant", detail: `${src.name} (${src.ip}) opened ${service} straight to ${dst.name}, a plant host, with no DMZ in between.`, src: src.name, dst: dst.name, source: "ids", attack: ["T0822"], advice: `Check who opened the session and whether it was booked. Remote sessions should end on a jump host in the DMZ, behind MFA.` });
     }
     if (v.allowed) {
       const list = (this.scans.get(src.name) ?? []).filter((x) => this.t - x.t <= 30);
@@ -462,10 +496,52 @@ export class Sim {
       if (!list.some((x) => x.target === target)) list.push({ t: this.t, target });
       this.scans.set(src.name, list);
       if (list.length >= 8) {
-        this.raise({ severity: "medium", title: "Network scan", detail: `${src.name} (${src.ip}) probed ${list.length} host and port pairs in 30 seconds.`, src: src.name, source: "ids" });
+        this.raise({ severity: "medium", title: "Network scan", detail: `${src.name} (${src.ip}) probed ${list.length} host and port pairs in 30 seconds.`, src: src.name, source: "ids", attack: ["T0846"], advice: `Find out what ${src.name} is and who uses it. A scan inside a plant network is rarely legitimate.` });
         this.scans.set(src.name, []);
       }
     }
+  }
+
+  /** Raise or extend an alert for traffic outside the sensor's baseline. */
+  private raiseAnomaly(a: Anomaly): void {
+    const l = a.link;
+    const src = this.net.host(l.src);
+    const toController = l.service === "modbus" && this.devices.has(l.dst);
+    if (a.kind === "new-fc") {
+      const known = this.sensor.learned(l.src, l.dst, l.service)?.fcs ?? [];
+      const knownText = known.length ? `only ${known.join(", ")}` : "no function codes, only connections";
+      const write = l.fc !== undefined && WRITE_FCS.includes(l.fc);
+      this.raise({
+        severity: write ? "high" : "medium",
+        title: "New function code",
+        detail: `${l.src} sent ${l.fc !== undefined ? fcText(l.fc) : "a new function code"} to ${l.dst}. The baseline has ${knownText} on this link.`,
+        src: l.src,
+        dst: l.dst,
+        source: "ids",
+        attack: write ? ["T0855"] : undefined,
+        advice: `Ask whoever looks after ${l.src} whether this was planned. If it was, learn it with ids learn ID. If not, treat ${l.src} as suspect.`,
+        anomaly: [l],
+      });
+      return;
+    }
+    const key = `New link|${l.src}|`;
+    const open = this.alerts.find((x) => x.key === key && !x.acked && this.t - x.lastT < 300);
+    const links = [...(open?.anomaly ?? []).filter((x) => !(x.dst === l.dst && x.service === l.service && x.fc === l.fc)), l];
+    // Writes to controllers first, then other Modbus, then the rest.
+    const rank = (x: LinkObs) => (x.service === "modbus" ? (x.fc !== undefined && WRITE_FCS.includes(x.fc) ? 0 : 1) : 2);
+    const sorted = [...links].sort((a, b) => rank(a) - rank(b));
+    const shown = sorted.slice(0, 6).map((x) => linkText(x)).join("; ");
+    const remote = links.some((x) => x.service === "rdp" || x.service === "ssh");
+    this.raise({
+      severity: toController || open?.severity === "high" ? "high" : "medium",
+      title: "New link",
+      detail: `${l.src}${src ? ` (${src.ip})` : ""} started ${links.length === 1 ? "a connection" : `${links.length} connections`} the sensor never saw while it learned this plant: ${shown}${links.length > 6 ? `, and ${links.length - 6} more (ids links --new)` : ""}.`,
+      src: l.src,
+      source: "ids",
+      attack: remote ? ["T0886"] : undefined,
+      advice: `If this is a planned change, learn it with ids learn ID. If nobody planned it, find out who uses ${l.src} and treat it as suspect.`,
+      anomaly: links,
+    });
   }
 
   private processAlarms(): void {
@@ -479,19 +555,34 @@ export class Sim {
     this.activeAlarms = now;
   }
 
-  raise(a: { severity: Severity; title: string; detail: string; src?: string; dst?: string; source: "ids" | "process" }): Alert {
+  raise(a: RaiseOptions): Alert {
     const key = `${a.title}|${a.src ?? ""}|${a.dst ?? ""}`;
     const existing = this.alerts.find((x) => x.key === key && !x.acked && this.t - x.lastT < 300);
     if (existing) {
       existing.count++;
       existing.lastT = this.t;
       existing.detail = a.detail;
+      if (SEV_RANK[a.severity] > SEV_RANK[existing.severity]) existing.severity = a.severity;
+      if (a.anomaly) existing.anomaly = a.anomaly;
+      if (a.attack) existing.attack = [...new Set([...(existing.attack ?? []), ...a.attack])];
       return existing;
     }
     const alert: Alert = { id: `A-${++this.alertSeq}`, t: this.t, lastT: this.t, count: 1, acked: false, key, ...a };
     this.alerts.push(alert);
     if (this.alerts.length > 200) this.alerts.shift();
     return alert;
+  }
+
+  /** Accept what an anomaly alert saw as normal: add it to the sensor's baseline and close the alert. */
+  learnAlert(id: string): Alert {
+    const a = this.alerts.find((x) => x.id.toLowerCase() === id.toLowerCase());
+    if (!a) throw new UserError(`no alert ${id}`);
+    if (!a.anomaly?.length) throw new UserError(`${a.id} is not an anomaly alert, so there is nothing to learn. Acknowledge it with alerts ack ${a.id} once it is handled.`);
+    this.sensor.learn(a.anomaly, "alert", this.t);
+    a.acked = true;
+    a.learned = true;
+    this.emit();
+    return a;
   }
 
   // ------------------------------------------------------------ views
@@ -523,6 +614,7 @@ export class Sim {
       plant: { model: this.plant.model, ...this.plant.snapshot(), alarms: this.plant.alarms() },
       hmi: { online: this.hmiOnline, lastPlc: this.site.hmi ? this.hmiLast[this.site.hmi.device] ?? 0 : 0, host: this.hmiHost },
       takeover: this.takeover,
+      sensor: { mode: this.sensor.mode, baseline: this.sensor.baseline.length, assets: this.sensor.assets(this.net.hosts).length },
       ...this.net.toJSON(),
       required: this.requiredFlows().map((f) => ({ id: f.flow.id, title: f.flow.title, ok: f.ok, reason: f.reason })),
       risks: this.risks(),
@@ -537,6 +629,7 @@ export interface SimSnapshot {
   plant: { model: string; alarms: { id: string; text: string; severity: string }[] } & Record<string, unknown>;
   hmi: { online: boolean; lastPlc: number; host: string };
   takeover: boolean;
+  sensor: { mode: string; baseline: number; assets: number };
   hosts: Host[];
   zones: Network["zones"];
   conduits: Network["conduits"];

@@ -1,6 +1,6 @@
 {
   "name": "zonesim",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "description": "An OT/ICS security training simulator in the browser. Secure a water plant, a gas compressor station, a data centre or your own site with zones and conduits, Modbus filtering and incident response.",
   "license": "Apache-2.0",

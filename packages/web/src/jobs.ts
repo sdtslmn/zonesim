@@ -1,7 +1,7 @@
 // Jobs: the people who work on a plant. Each job connects the terminal to the
 // places that person works from: the operator to the HMI, the network
-// engineer to the firewall and switches, the SOC analyst to the console where
-// traffic and alerts show up, and the attacker to a foothold outside the plant.
+// engineer to the firewall and switches, the SOC analyst to the OT monitoring
+// console, and the attacker to a foothold outside the plant.
 
 import { cliName, type Sim } from "@zonesim/core";
 
@@ -23,7 +23,7 @@ export interface Job {
   id: JobId;
   label: string;
   blurb: string;
-  view: "map" | "plant" | "hmi";
+  view: "map" | "plant" | "hmi" | "monitor";
   places: Place[];
   quick: QuickCommand[];
 }
@@ -82,14 +82,15 @@ export function jobFor(id: JobId, sim: Sim): Job {
       return {
         id,
         label: "SOC analyst",
-        blurb: "Watch what crosses the network and what the IDS sensor raises. A full OT monitoring console comes in the next release.",
-        view: "map",
+        blurb: "Watch the plant from the OT monitoring console: the assets the IDS sensor found, who talks to whom, and the alerts it raises. Tell attacks from planned changes.",
+        view: "monitor",
         places: [consolePlace],
         quick: [
+          { cmd: "ids", label: "Sensor" },
           { cmd: "alerts", label: "Alerts" },
-          { cmd: "flows", label: "Flows" },
+          { cmd: "assets", label: "Assets" },
+          { cmd: "ids links --new", label: "New links" },
           { cmd: `ssh ${fw} execute log display`, label: "Firewall log" },
-          { cmd: "fw log", label: "Blocked traffic" },
         ],
       };
     case "attacker": {

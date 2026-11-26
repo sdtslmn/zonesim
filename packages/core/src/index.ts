@@ -1,5 +1,7 @@
 export { VERSION } from "./version.js";
 export { Sim, STEP, describeRequest, type SimOptions, type TrafficEvent, type Conversation, type Alert, type FwLogEntry, type SimSnapshot, type Severity, type HmiAction, type HmiSource } from "./sim.js";
+export { Sensor, fcText, linkText, type SensorMode, type BaselineLink, type SeenLink, type Asset, type LinkObs, type DeviceIdentity } from "./sensor.js";
+export { ATTACK_ICS, attackUrl, attackText } from "./attack.js";
 export { FC_NAMES, READ_FCS, WRITE_FCS, EXCEPTIONS, TABLES, TABLE_NAMES, tableFor, type ModbusRequest, type ModbusReply, type PointTable } from "./modbus.js";
 export { Controller } from "./device.js";
 export { PROCESS_MODELS, WaterTank, WATER_TANK, GasCompressor, GAS_COMPRESSOR, DcCooling, DC_COOLING, MetroLine, METRO_LINE, type ProcessModel, type ProcessModelType, type SignalSpec, type ParamSpec, type PlantAlarm, type Readout, type ReadoutState, type TrendSpec } from "./process/index.js";
@@ -16,7 +18,7 @@ export { LabSession, type CheckResult } from "./labs/session.js";
 export { resolveLab, substitute, evalArithmetic } from "./labs/resolve.js";
 export { validateLabOnSite, validateLabsOnSite, type LabFit } from "./labs/validate.js";
 export { Trainer, CONSOLE_HELP, hostHelp, type TrainerOptions } from "./trainer.js";
-export { C, stripAnsi, table, clock, wrapText, termMd, reflow, UserError } from "./util.js";
+export { C, stripAnsi, table, clock, ago, wrapText, termMd, reflow, UserError } from "./util.js";
 export { siteJsonSchema } from "./site-schema.js";
 export { Infra, MODBUS_SIGNATURES, type NetDevice, type SwitchDevice, type FirewallDevice } from "./infra.js";
 export { openSession, cliName, vendorName, type DeviceSession } from "./devices/index.js";

@@ -6,8 +6,8 @@ them with conduits and firewall rules, filter Modbus function codes, route
 vendor access through a DMZ, and investigate the alerts when someone attacks
 the plant. Pick a job (operator, network engineer, SOC analyst or attacker)
 and work from where that person works: the HMI, the firewall and switches in
-their own command lines (FortiOS, Hirschmann HiOS, Cisco IOS), the alerts, or
-a foothold in the office. There are four plants to practise on (a water
+their own command lines (FortiOS, Hirschmann HiOS, Cisco IOS), the OT
+monitoring console, or a foothold in the office. There are four plants to practise on (a water
 treatment plant, a gas compressor station, a data centre and a metro line),
 46 labs, and you can load your own site. It runs in your browser, and nothing real is
 touched.
@@ -32,6 +32,12 @@ step. [Open this lab](https://sdtslmn.github.io/zonesim/?lab=i03), or see the
   the chilled water pumps and the servers shut down within minutes. On the
   metro, open the feeder breaker and trains are stranded in the tunnel, or
   bypass the emergency trip and the third rail goes live with a crew on it.
+- **Watch it as a SOC analyst.** An OT monitoring console shows what the
+  IDS sensor sees: an asset inventory with controller firmware, who talks to
+  whom, the packets, and alerts mapped to MITRE ATT&CK for ICS with what to
+  check first. The sensor compares traffic with a baseline it learned, so a
+  new link or a new Modbus function code stands out. Learn planned changes,
+  and see what happens when a sensor is left learning during an attack.
 - **Take over from the backup centre.** The metro is run from an OCC, with a
   backup OCC that stays passive, its firewall rules built but switched off.
   Lose the OCC with `takeover start` and bring the line back from the BOCC.
@@ -203,14 +209,20 @@ Fortinet, Belden (Hirschmann) or Cisco.
 
 ![The operator job at the Kestrel compressor station: the HMI tab with the compressor faceplate open, showing its values, start and stop, auto and manual, and the pressure setpoint](docs/images/web-hmi.png)
 
+![The SOC analyst job on the metro: the OT monitor's alert list after an office PC scanned the station and lowered the feeder's trip setting, with the unauthorized write open, its ATT&CK techniques and what to check](docs/images/web-monitor.png)
+
+See [The OT monitor](docs/help/monitor.md) for how the sensor learns and what
+each tab shows.
+
 ## The screen
 
 Labs, Help and Site are on the left. Above the map, pick your job: it sets
 where the terminal is connected (the HMI, a switch, the firewall, the
 console or a host in the office) and gives you the commands that job uses
-most. The network map, the HMI and the plant view are on the top right,
-with a status strip. The HMI shows what the operator sees; the plant view
-shows the real process. The terminal is docked at the bottom:
+most. The network map, the HMI, the plant view and the OT monitor are on the
+top right, with a status strip. The HMI shows what the operator sees; the
+plant view shows the real process; the monitor shows what the IDS sensor
+sees. The terminal is docked at the bottom:
 drag its edge to resize it, or fold it away. The **Site** button in the top
 bar switches plant in one click, and **Home** brings you back to the start
 page. On a phone the panels stack behind a tab bar.
