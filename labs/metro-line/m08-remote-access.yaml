@@ -5,40 +5,48 @@ level: intermediate
 minutes: 12
 topic: Remote access
 intro: |
-  The traction power maker supports the substation with remote desktop
-  straight from the internet into the engineering workstation in the control
+  The traction power maker supports the system with remote desktop straight
+  from the internet into the engineering workstation in the OCC control
   zone. If the maker's laptop or password is compromised, the attacker lands
-  next to the feeder breaker.
+  next to the SCADA, with a path to every controller on the line.
 
-  Route the maker's logins through ${jump} in the DMZ, with multi-factor
-  authentication there. You also play the maker to test the path:
-  `ssh ${vendor}`, then `rdp ...`.
+  Route the maker's logins through ${jump} in the OCC DMZ, with
+  multi-factor authentication there. You also play the maker to test the
+  path: `ssh ${vendor}`, then `rdp ...`.
 setup:
   - zone create enterprise --sl 1
   - zone create dmz --sl 2
   - zone create operations --sl 2
   - zone create control --sl 3
+  - zone create station --sl 3
   - zone create safety --sl 3
-  - zone set ${control-centre.zone} --sl 2
+  - zone set ${backup-centre.zone} --sl 3
   - zone add enterprise ${office}
   - zone add dmz ${report-server} ${jump}
   - zone add operations ${historian}
-  - zone add control ${hmi} ${ews} ${plc} ${tvs}
+  - zone add control ${hmi} ${ews}
+  - zone add station ${plc} ${tvs}
   - zone add safety ${sis}
   - zone delete ${plc.zone}
-  - conduit create ops-control operations control
-  - fw allow ops-control from ${historian} to ${plc} modbus fc 3,4
-  - fw allow ops-control from ${historian} to ${tvs} modbus fc 3,4
-  - conduit create ops-safety operations safety
-  - fw allow ops-safety from ${historian} to ${sis} modbus fc 2,4
+  - conduit create control-station control station
+  - fw allow control-station from ${hmi} to ${plc} modbus fc 1,2,3,4,5,6
+  - fw allow control-station from ${hmi} to ${tvs} modbus fc 1,2,3,4,5,6
+  - fw allow control-station from ${ews} to ${plc} modbus
+  - fw allow control-station from ${ews} to ${tvs} modbus
   - conduit create control-safety control safety
-  - fw allow control-safety from ${hmi} to ${sis} modbus fc read
-  - conduit create wan-control ${control-centre.zone} control
-  - fw allow wan-control from ${control-centre} to ${plc} modbus fc 3,4,5,6
-  - fw allow wan-control from ${control-centre} to ${tvs} modbus fc 3,4,5,6
-  - fw allow wan-control from ${backup-centre} to ${plc} modbus fc 3,4
-  - conduit create wan-safety ${control-centre.zone} safety
-  - fw allow wan-safety from ${control-centre} to ${sis} modbus fc 2,4
+  - fw allow control-safety from ${hmi} to ${sis} modbus fc 2,4
+  - conduit create ops-control operations control
+  - fw allow ops-control from ${historian} to ${hmi} https
+  - conduit create control-bocc control ${backup-centre.zone}
+  - fw allow control-bocc from ${hmi} to ${backup-centre} https
+  - conduit create bocc-station ${backup-centre.zone} station
+  - fw allow bocc-station from ${backup-centre} to ${plc} modbus fc 1,2,3,4,5,6
+  - fw allow bocc-station from ${backup-centre} to ${tvs} modbus fc 1,2,3,4,5,6
+  - fw disable bocc-station 1
+  - fw disable bocc-station 2
+  - conduit create bocc-safety ${backup-centre.zone} safety
+  - fw allow bocc-safety from ${backup-centre} to ${sis} modbus fc 2,4
+  - fw disable bocc-safety 1
   - conduit create ops-dmz operations dmz
   - fw allow ops-dmz from ${historian} to ${report-server} https
   - conduit create ent-dmz enterprise dmz
@@ -75,11 +83,11 @@ solution:
   - conduit delete inet-control
 learned: |
   Equipment makers often hold standing remote access to their kit, and it
-  is a well-trodden way into industrial sites. Ending it in the DMZ, behind a
-  second factor and a separate session, gives you one place to approve,
-  record and cut those sessions. In a metro the session is usually booked
-  through the OCC first, so the controller knows who is working on the
-  substation.
+  is a well-trodden way into industrial sites. Ending it in the OCC DMZ,
+  behind a second factor and a separate session, gives you one place to
+  approve, record and cut those sessions. In a metro the session is usually
+  booked with the OCC first, so the controller knows who is working on the
+  traction power.
 refs:
   - IEC 62443-3-3 SR 1.13 (access via untrusted networks)
   - IEC 62443-3-3 SR 1.1 RE 2 (multifactor authentication for untrusted networks)

@@ -6,10 +6,10 @@ minutes: 15
 topic: Incident response
 intro: |
   02:10, engineering hours. A track crew is working in the ${tag.tunnel}
-  under a possession, so the third rail should be dead. The control room
-  screen shows feeder ${tag.feeder} CLOSED, ${param.lineVoltage} V on the
-  rail, the possession no longer registered, and the emergency trip system
-  ${sis} BYPASSED. Someone is inside the control zone.
+  under a possession, so the third rail should be dead. The OCC screen shows
+  feeder ${tag.feeder} CLOSED, ${param.lineVoltage} V on the rail, the
+  possession no longer registered, and the emergency trip system ${sis}
+  BYPASSED. Someone is inside the OCC control zone.
 
   Make the track dead first, and keep it dead. Then find the source and lock
   the safety system down.
@@ -18,27 +18,35 @@ setup:
   - zone create dmz --sl 2
   - zone create operations --sl 2
   - zone create control --sl 3
+  - zone create station --sl 3
   - zone create safety --sl 3
-  - zone set ${control-centre.zone} --sl 2
+  - zone set ${backup-centre.zone} --sl 3
   - zone add enterprise ${office}
   - zone add dmz ${report-server} ${jump}
   - zone add operations ${historian}
-  - zone add control ${hmi} ${ews} ${plc} ${tvs}
+  - zone add control ${hmi} ${ews}
+  - zone add station ${plc} ${tvs}
   - zone add safety ${sis}
   - zone delete ${plc.zone}
-  - conduit create ops-control operations control
-  - fw allow ops-control from ${historian} to ${plc} modbus fc 3,4
-  - fw allow ops-control from ${historian} to ${tvs} modbus fc 3,4
-  - conduit create ops-safety operations safety
-  - fw allow ops-safety from ${historian} to ${sis} modbus
+  - conduit create control-station control station
+  - fw allow control-station from ${hmi} to ${plc} modbus fc 1,2,3,4,5,6
+  - fw allow control-station from ${hmi} to ${tvs} modbus fc 1,2,3,4,5,6
+  - fw allow control-station from ${ews} to ${plc} modbus
+  - fw allow control-station from ${ews} to ${tvs} modbus
   - conduit create control-safety control safety
   - fw allow control-safety from control to safety modbus
-  - conduit create wan-control ${control-centre.zone} control
-  - fw allow wan-control from ${control-centre} to ${plc} modbus fc 3,4,5,6
-  - fw allow wan-control from ${control-centre} to ${tvs} modbus fc 3,4,5,6
-  - fw allow wan-control from ${backup-centre} to ${plc} modbus fc 3,4
-  - conduit create wan-safety ${control-centre.zone} safety
-  - fw allow wan-safety from ${control-centre} to ${sis} modbus fc 2,4
+  - conduit create ops-control operations control
+  - fw allow ops-control from ${historian} to ${hmi} https
+  - conduit create control-bocc control ${backup-centre.zone}
+  - fw allow control-bocc from ${hmi} to ${backup-centre} https
+  - conduit create bocc-station ${backup-centre.zone} station
+  - fw allow bocc-station from ${backup-centre} to ${plc} modbus fc 1,2,3,4,5,6
+  - fw allow bocc-station from ${backup-centre} to ${tvs} modbus fc 1,2,3,4,5,6
+  - fw disable bocc-station 1
+  - fw disable bocc-station 2
+  - conduit create bocc-safety ${backup-centre.zone} safety
+  - fw allow bocc-safety from ${backup-centre} to ${sis} modbus fc 2,4
+  - fw disable bocc-safety 1
   - conduit create ops-dmz operations dmz
   - fw allow ops-dmz from ${historian} to ${report-server} https
   - conduit create ent-dmz enterprise dmz
@@ -52,9 +60,9 @@ settle: 5
 tasks:
   - "Now: from ${hmi}, open the feeder (${plc} coil ${plc:feeder.command} = 0)."
   - Register the possession again (coil ${plc:possession} = 1), so the controller holds the feeder open.
-  - Remove the bypass (${sis} coil ${sis:sis.bypass} = 0), so the emergency trip system holds the rectifier off as a second layer. Today that still works from the control zone, which is exactly the problem.
+  - Remove the bypass (${sis} coil ${sis:sis.bypass} = 0), so the emergency trip system holds the rectifier off as a second layer. Today that still works from the OCC control zone, which is exactly the problem.
   - Find which host made the writes and write its name into source.txt.
-  - "Lock down the safety zone: ${hmi} and the historian may only read ${sis}, and no host may write to it."
+  - "Lock down the safety zone: the OCC SCADA may only read ${sis}, and no host may write to it."
   - Run `report` and check that "No host can write to the safety system" passes.
 checks:
   - name: The third rail is dead
@@ -69,33 +77,27 @@ checks:
     file: { path: source.txt, matches: '${ews}|${ews.ip}' }
   - name: No host can write to the safety system
     risk: sis-read-only
-  - name: The control room still reads ${sis}
+  - name: The OCC SCADA still sees the emergency trip status
     required: hmi-sis
-  - name: The historian still reads ${sis}
-    required: historian-sis
-  - name: The OCC still sees the emergency trip status
-    required: occ-sis
 hints:
   - "Seconds count: `ssh ${hmi} modbus write ${plc} coil ${plc:feeder.command} 0`, then `ssh ${hmi} modbus write ${plc} coil ${plc:possession} 1`."
   - "`ssh ${hmi} modbus write ${sis} coil ${sis:sis.bypass} 0` re-arms the emergency trip. `alerts` shows who wrote to ${sis}; the writes to ${plc} came from a host the IDS trusts."
-  - "Rule 1 on control-safety lets the whole control zone send anything to the safety zone; replace it with a read-only rule for ${hmi}, and narrow the historian's rule on ops-safety to fc 2,4."
+  - "Rule 1 on control-safety lets the whole OCC control zone send anything to the safety zone; replace it with a rule for ${hmi} with `fc 2,4`."
 solution:
   - ssh ${hmi} modbus write ${plc} coil ${plc:feeder.command} 0
   - ssh ${hmi} modbus write ${plc} coil ${plc:possession} 1
   - ssh ${hmi} modbus write ${sis} coil ${sis:sis.bypass} 0
   - echo ${ews} > source.txt
   - fw delete control-safety 1
-  - fw allow control-safety from ${hmi} to ${sis} modbus fc read
-  - fw delete ops-safety 1
-  - fw allow ops-safety from ${historian} to ${sis} modbus fc 2,4
+  - fw allow control-safety from ${hmi} to ${sis} modbus fc 2,4
 learned: |
   Two independent layers keep a crew safe on the track: the controller holds
   the feeder open while a possession is registered, and the emergency trip
   system holds the rectifier off while the possession key is out. The
-  attacker defeated both from the engineering workstation, a host the IDS
-  trusts to write to ${plc}, so only the write to the safety system stood
-  out. Keep safety systems read-only from the network, and give the
-  engineering workstation the protection its power deserves.
+  attacker defeated both from the engineering workstation at the OCC, a host
+  the IDS trusts to write to ${plc}, so only the write to the safety system
+  stood out. Keep safety systems read-only from the network, wherever the
+  network starts.
 refs:
   - EN 50122-1 (railway applications, protection against electric shock)
   - IEC 61508 (independence of safety functions)

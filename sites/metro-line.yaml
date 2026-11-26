@@ -1,23 +1,23 @@
 # yaml-language-server: $schema=../schema/site.schema.json
 #
-# Meridian Line metro: a built-in ZoneSim site. One section of a metro line:
-# a traction power substation that feeds the third rail, the tunnel
-# ventilation system, and the emergency trip system that keeps the power off
-# while a crew works on the track. The operations control centre (OCC) and
-# the backup OCC run it over the metro WAN, the traction power maker supports
-# it remotely, and the station network starts flat.
+# Meridian Line metro: a built-in ZoneSim site. One section of a metro line,
+# run from the operations control centre (OCC). The traction power (PCS) and
+# tunnel ventilation (TVCS) SCADA, the historian, the engineering workstation
+# and the DMZ all sit at the OCC; the station has only the controllers, which
+# the OCC reaches over the metro backbone. The backup OCC (BOCC) is passive:
+# it sends nothing to the station until the OCC is lost and it takes over.
 
 schema: zonesim-site/1
 id: metro-line
 name: Meridian Line metro
 description: >-
-  A metro line section. Traction power controller tps-1 closes feeder breaker
-  CB-11 to put 750 V on the third rail and trips it on overcurrent. Tunnel
-  ventilation controller tvc-1 runs the tunnel fans and has a fire mode. The
-  emergency trip system ets-1 holds the power off while a crew is on the
-  track. The OCC and the backup OCC reach the station over the metro WAN, the
-  traction power maker over the internet, and it all starts on one flat
-  station network.
+  A metro line section run from the OCC. The OCC SCADA occ-scada controls
+  traction power controller tps-1 (feeder breaker CB-11, 750 V third rail)
+  and tunnel ventilation controller tvc-1 at the station, and watches the
+  emergency trip system ets-1 that keeps the power off while a crew is on
+  the track. The backup OCC stays passive until the OCC is lost. The
+  traction power maker supports the system from the internet, and as found
+  the OCC network and the backbone to the station are one flat network.
 
 process:
   model: metro-line
@@ -45,57 +45,58 @@ process:
 
 hosts:
   - { name: rail-vendor, role: vendor, ip: 198.51.100.40, level: 5, kind: external, services: [], os: Windows 11, user: vendor, description: Traction power maker's remote support }
-  - { name: occ-scada, role: control-centre, ip: 10.30.0.10, level: 3, kind: ot, services: [https], os: Linux, user: controller, description: "Operations control centre SCADA, 12 km away over the metro WAN" }
-  - { name: bocc-scada, role: backup-centre, ip: 10.30.8.10, level: 3, kind: ot, services: [https], os: Linux, user: controller, description: "Backup operations control centre SCADA, on hot standby" }
-  - { name: corp-pc, role: office, ip: 172.20.40.21, level: 4, kind: it, services: [rdp], os: Windows 11, user: nadia, description: Station office PC }
-  - { name: hist-dmz, role: report-server, ip: 172.20.35.10, level: 3.5, kind: dmz, services: [https], os: Linux, user: svc-report, description: Historian copy for maintenance reports }
-  - { name: jump-01, role: jump, ip: 172.20.35.20, level: 3.5, kind: dmz, services: [rdp, ssh], os: Windows Server 2022, user: vendor, description: Remote access jump host }
-  - { name: historian, role: historian, ip: 172.20.30.10, level: 3, kind: ot, services: [https, ssh], os: Windows Server 2019, user: svc-hist, description: Station historian }
-  - { name: scr-1, role: hmi, ip: 172.20.20.10, level: 2, kind: ot, services: [http, rdp], os: Windows 10 LTSC, user: operator, description: Station control room workstation }
-  - { name: ews-1, role: ews, ip: 172.20.20.30, level: 2, kind: ot, services: [rdp], os: Windows 10, user: engineer, description: Engineering workstation }
-  - { name: tps-1, role: plc, ip: 172.20.10.10, level: 1, kind: ot, services: [modbus, http], os: "VT-PCS 500, firmware 3.2.0", description: Traction power substation controller }
-  - { name: tvc-1, role: tvs, ip: 172.20.10.20, level: 1, kind: ot, services: [modbus], os: "AC-TVS 20, firmware 2.6.1", description: Tunnel ventilation controller }
-  - { name: ets-1, role: sis, ip: 172.20.10.30, level: 1, kind: ot, services: [modbus], os: "VT-ETS 10, firmware 1.4.2", description: Emergency trip system (traction power safety) }
+  - { name: corp-pc, role: office, ip: 172.20.40.21, level: 4, kind: it, services: [rdp], os: Windows 11, user: nadia, description: Office PC in the OCC building }
+  - { name: hist-dmz, role: report-server, ip: 172.20.35.10, level: 3.5, kind: dmz, services: [https], os: Linux, user: svc-report, description: "Historian copy for maintenance reports, at the OCC" }
+  - { name: jump-01, role: jump, ip: 172.20.35.20, level: 3.5, kind: dmz, services: [rdp, ssh], os: Windows Server 2022, user: vendor, description: "Remote access jump host, at the OCC" }
+  - { name: historian, role: historian, ip: 172.20.30.10, level: 3, kind: ot, services: [https, ssh], os: Windows Server 2019, user: svc-hist, description: PCS and TVCS historian at the OCC }
+  - { name: occ-scada, role: hmi, ip: 172.20.20.10, level: 2, kind: ot, services: [https, rdp], os: Linux, user: controller, description: "PCS and TVCS SCADA at the OCC: servers and operator workstations" }
+  - { name: ews-1, role: ews, ip: 172.20.20.30, level: 2, kind: ot, services: [rdp], os: Windows 10, user: engineer, description: Engineering workstation at the OCC }
+  - { name: bocc-scada, role: backup-centre, ip: 10.40.20.10, level: 2, kind: ot, services: [https], os: Linux, user: controller, description: "Backup OCC SCADA: passive until the OCC is lost" }
+  - { name: tps-1, role: plc, ip: 172.21.10.10, level: 1, kind: ot, services: [modbus, http], os: "VT-PCS 500, firmware 3.2.0", description: Traction power substation controller at Central }
+  - { name: tvc-1, role: tvs, ip: 172.21.10.20, level: 1, kind: ot, services: [modbus], os: "AC-TVS 20, firmware 2.6.1", description: Tunnel ventilation controller at Central }
+  - { name: ets-1, role: sis, ip: 172.21.10.30, level: 1, kind: ot, services: [modbus], os: "VT-ETS 10, firmware 1.4.2", description: Emergency trip system at the Central substation }
 
-# As found: everything at the station on one network, the WAN link open to it
-# all, and a port forward for the traction power maker.
+# As found: the OCC network and the backbone to the station are one flat
+# network, the BOCC link is open to all of it, and the traction power maker
+# has a port forward to the engineering workstation.
 zones:
   - { name: internet, description: Everything outside the metro, hosts: [rail-vendor] }
-  - { name: wan, port: wan2, description: The OCC and the backup OCC across the metro WAN, hosts: [occ-scada, bocc-scada] }
-  - name: station
-    description: "The whole station network as found: office, control room and controllers on one flat network"
-    hosts: [corp-pc, hist-dmz, jump-01, historian, scr-1, ews-1, tps-1, tvc-1, ets-1]
+  - { name: bocc, port: wan2, description: The backup OCC across the metro WAN, hosts: [bocc-scada] }
+  - name: metro
+    description: "The OCC network and the backbone to the station as found: office, DMZ, SCADA and controllers on one flat network"
+    hosts: [corp-pc, hist-dmz, jump-01, historian, occ-scada, ews-1, tps-1, tvc-1, ets-1]
 
 conduits:
   - name: edge
-    zones: [internet, station]
+    zones: [internet, metro]
     rules:
       - allow from rail-vendor to ews-1 rdp
-  - name: wan-link
-    zones: [wan, station]
+  - name: bocc-link
+    zones: [bocc, metro]
     rules:
-      - allow from wan to station any
+      - allow from bocc to metro any
+      - allow from occ-scada to bocc-scada https
 
-# The station firewall and two switches: a Cisco switch in the station office
-# and server room, and a Hirschmann switch in the control room and
-# substation. The OCC link comes in on firewall port wan2.
+# The backbone firewall at the OCC, a Cisco switch in the OCC equipment room
+# and a Hirschmann switch in the Central substation. The BOCC comes in on
+# firewall port wan2.
 network:
   firewall: { name: fw-01, vendor: fortinet, model: FortiGate Rugged 60F, firmware: v7.4.4, hostname: FGR60F-MERIDIAN, ip: 192.168.250.1 }
   switches:
-    - name: sw-office
+    - name: sw-occ
       vendor: cisco
       model: IE-3400
       firmware: 17.9.4
-      hostname: SW-MERIDIAN-OFFICE
+      hostname: SW-MERIDIAN-OCC
       ip: 192.168.250.11
-      ports: { Gi1/1: corp-pc, Gi1/2: hist-dmz, Gi1/3: jump-01, Gi1/4: historian, Gi1/5: null, Gi1/6: null }
+      ports: { Gi1/1: corp-pc, Gi1/2: hist-dmz, Gi1/3: jump-01, Gi1/4: historian, Gi1/5: occ-scada, Gi1/6: ews-1, Gi1/7: null, Gi1/8: null }
     - name: sw-station
       vendor: hirschmann
       model: RSP35
       firmware: 09.4.03
-      hostname: SW-MERIDIAN-SCR
+      hostname: SW-CENTRAL-TPSS
       ip: 192.168.250.12
-      ports: { "1/1": scr-1, "1/2": ews-1, "1/3": tps-1, "1/4": tvc-1, "1/5": ets-1, "1/6": null, "1/7": null }
+      ports: { "1/1": tps-1, "1/2": tvc-1, "1/3": ets-1, "1/4": null, "1/5": null }
 
 devices:
   tps-1:
@@ -158,48 +159,52 @@ devices:
         - { addr: 0, tag: ETS_OC_SP, signal: sis.trip_current, description: Backup overcurrent trip, units: A }
 
 hmi:
-  host: scr-1
+  host: occ-scada
   device: tps-1
   timeout: 6
 
+# The OCC runs the line. The BOCC sends nothing to the station until the OCC
+# is lost (takeover start in the terminal); then it takes over the OCC's role.
+standby:
+  centre: OCC
+  backupName: BOCC
+  backup: bocc-scada
+  lost: [occ-scada, ews-1, historian, hist-dmz, jump-01, corp-pc]
+
 polling:
-  - { from: scr-1, to: tps-1, service: modbus, fc: [3, 4], every: 2 }
-  - { from: scr-1, to: tvc-1, service: modbus, fc: [3, 4], every: 2 }
-  - { from: scr-1, to: ets-1, service: modbus, fc: [2], every: 5 }
-  - { from: occ-scada, to: tps-1, service: modbus, fc: [3, 4], every: 3 }
-  - { from: occ-scada, to: tvc-1, service: modbus, fc: [3, 4], every: 5 }
-  - { from: occ-scada, to: ets-1, service: modbus, fc: [2], every: 10 }
-  - { from: bocc-scada, to: tps-1, service: modbus, fc: [4], every: 10 }
-  - { from: historian, to: tps-1, service: modbus, fc: [4], every: 5 }
-  - { from: historian, to: tvc-1, service: modbus, fc: [4], every: 5 }
-  - { from: historian, to: ets-1, service: modbus, fc: [4], every: 10 }
+  - { from: occ-scada, to: tps-1, service: modbus, fc: [3, 4], every: 2 }
+  - { from: occ-scada, to: tvc-1, service: modbus, fc: [3, 4], every: 2 }
+  - { from: occ-scada, to: ets-1, service: modbus, fc: [2], every: 5 }
+  - { from: occ-scada, to: bocc-scada, service: https, every: 10 }
+  - { from: historian, to: occ-scada, service: https, every: 5 }
   - { from: historian, to: hist-dmz, service: https, every: 10 }
   - { from: corp-pc, to: hist-dmz, service: https, every: 30 }
+  - { from: bocc-scada, to: tps-1, service: modbus, fc: [3, 4], every: 2, when: takeover }
+  - { from: bocc-scada, to: tvc-1, service: modbus, fc: [3, 4], every: 2, when: takeover }
+  - { from: bocc-scada, to: ets-1, service: modbus, fc: [2], every: 5, when: takeover }
 
 flows:
-  - { id: hmi-plc, why: Station staff watch the traction power and register possessions from the control room., from: scr-1, to: tps-1, service: modbus, fc: [1, 2, 3, 4, 5, 6] }
-  - { id: hmi-tvs, why: Station staff run the tunnel fans from the control room., from: scr-1, to: tvc-1, service: modbus, fc: [1, 2, 3, 4, 5, 6] }
-  - { id: hmi-sis, why: Station staff see the emergency trip status., from: scr-1, to: ets-1, service: modbus, fc: [2, 4] }
-  - { id: occ-plc, why: "The OCC energizes and de-energizes the line and resets trips.", from: occ-scada, to: tps-1, service: modbus, fc: [3, 4, 5, 6] }
-  - { id: occ-tvs, why: The OCC commands fire mode from the control centre., from: occ-scada, to: tvc-1, service: modbus, fc: [3, 4, 5, 6] }
-  - { id: occ-sis, why: The OCC sees the emergency trip status., from: occ-scada, to: ets-1, service: modbus, fc: [2, 4] }
-  - { id: bocc-plc, why: "The backup OCC keeps a live copy of the traction power, ready to take over.", from: bocc-scada, to: tps-1, service: modbus, fc: [3, 4] }
-  - { id: historian-plc, why: The historian records the traction power values., from: historian, to: tps-1, service: modbus, fc: [3, 4] }
-  - { id: historian-tvs, why: The historian records the tunnel temperatures., from: historian, to: tvc-1, service: modbus, fc: [3, 4] }
-  - { id: historian-sis, why: The historian records the emergency trip values., from: historian, to: ets-1, service: modbus, fc: [2, 4] }
-  - { id: ews-plc, why: Engineers maintain the traction power controller., from: ews-1, to: tps-1, service: modbus, fc: [1, 2, 3, 4, 5, 6, 15, 16, 43] }
-  - { id: ews-tvs, why: Engineers maintain the tunnel ventilation controller., from: ews-1, to: tvc-1, service: modbus, fc: [1, 2, 3, 4, 5, 6, 15, 16, 43] }
-  - { id: historian-replica, why: The historian copies data to the DMZ so outsiders never touch the station., from: historian, to: hist-dmz, service: https }
+  - { id: hmi-plc, why: The OCC power controller runs the traction power and registers possessions., from: occ-scada, to: tps-1, service: modbus, fc: [1, 2, 3, 4, 5, 6] }
+  - { id: hmi-tvs, why: The OCC runs the tunnel fans and fire mode., from: occ-scada, to: tvc-1, service: modbus, fc: [1, 2, 3, 4, 5, 6] }
+  - { id: hmi-sis, why: The OCC sees the emergency trip status., from: occ-scada, to: ets-1, service: modbus, fc: [2, 4] }
+  - { id: bocc-sync, why: "The OCC keeps the BOCC's database in step, so the BOCC can take over at any moment.", from: occ-scada, to: bocc-scada, service: https }
+  - { id: historian-scada, why: The historian collects values from the SCADA servers., from: historian, to: occ-scada, service: https }
+  - { id: ews-plc, why: Engineers maintain the traction power controller from the OCC., from: ews-1, to: tps-1, service: modbus, fc: [1, 2, 3, 4, 5, 6, 15, 16, 43] }
+  - { id: ews-tvs, why: Engineers maintain the tunnel ventilation controller from the OCC., from: ews-1, to: tvc-1, service: modbus, fc: [1, 2, 3, 4, 5, 6, 15, 16, 43] }
+  - { id: historian-replica, why: The historian copies data to the DMZ so outsiders never touch the control network., from: historian, to: hist-dmz, service: https }
   - { id: office-reports, why: Office staff read maintenance reports from the DMZ copy., from: corp-pc, to: hist-dmz, service: https }
   - id: vendor-support
     why: The traction power maker logs in for support, directly or through the jump host.
     paths:
       - [{ from: rail-vendor, to: jump-01, service: rdp }, { from: jump-01, to: ews-1, service: rdp }]
       - [{ from: rail-vendor, to: ews-1, service: rdp }]
+  - { id: bocc-plc, when: takeover, why: "Once the OCC is lost, the BOCC runs the traction power.", from: bocc-scada, to: tps-1, service: modbus, fc: [1, 2, 3, 4, 5, 6] }
+  - { id: bocc-tvs, when: takeover, why: "Once the OCC is lost, the BOCC runs the tunnel fans and fire mode.", from: bocc-scada, to: tvc-1, service: modbus, fc: [1, 2, 3, 4, 5, 6] }
+  - { id: bocc-sis, when: takeover, why: "Once the OCC is lost, the BOCC sees the emergency trip status.", from: bocc-scada, to: ets-1, service: modbus, fc: [2, 4] }
 
 ids:
   writers:
-    tps-1: [scr-1, ews-1, occ-scada, bocc-scada]
-    tvc-1: [scr-1, ews-1, occ-scada, bocc-scada]
+    tps-1: [occ-scada, ews-1, bocc-scada]
+    tvc-1: [occ-scada, ews-1, bocc-scada]
   safety: [ets-1]
   identify: [ews-1]

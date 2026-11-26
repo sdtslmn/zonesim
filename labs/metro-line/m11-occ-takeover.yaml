@@ -1,0 +1,108 @@
+id: m11-occ-takeover
+site: metro-line
+title: The OCC is evacuated, take over from the BOCC
+level: scenario
+minutes: 15
+topic: Continuity of operations
+intro: |
+  Tuesday, 09:12. A fire alarm evacuates the OCC building. The controllers
+  shut their consoles down and leave, and the OCC SCADA, historian and
+  engineering workstation go with the building. Six trains are on the line.
+
+  The BOCC has kept a synchronised copy all along and stayed passive, its
+  firewall rules built but switched off. Take over from the BOCC, keep the
+  line running, and when the OCC is back, hand control back and make the
+  BOCC passive again.
+setup:
+  - zone create enterprise --sl 1
+  - zone create dmz --sl 2
+  - zone create operations --sl 2
+  - zone create control --sl 3
+  - zone create station --sl 3
+  - zone create safety --sl 3
+  - zone set ${backup-centre.zone} --sl 3
+  - zone add enterprise ${office}
+  - zone add dmz ${report-server} ${jump}
+  - zone add operations ${historian}
+  - zone add control ${hmi} ${ews}
+  - zone add station ${plc} ${tvs}
+  - zone add safety ${sis}
+  - zone delete ${plc.zone}
+  - conduit create control-station control station
+  - fw allow control-station from ${hmi} to ${plc} modbus fc 1,2,3,4,5,6
+  - fw allow control-station from ${hmi} to ${tvs} modbus fc 1,2,3,4,5,6
+  - fw allow control-station from ${ews} to ${plc} modbus
+  - fw allow control-station from ${ews} to ${tvs} modbus
+  - conduit create control-safety control safety
+  - fw allow control-safety from ${hmi} to ${sis} modbus fc 2,4
+  - conduit create ops-control operations control
+  - fw allow ops-control from ${historian} to ${hmi} https
+  - conduit create control-bocc control ${backup-centre.zone}
+  - fw allow control-bocc from ${hmi} to ${backup-centre} https
+  - conduit create bocc-station ${backup-centre.zone} station
+  - fw allow bocc-station from ${backup-centre} to ${plc} modbus fc 1,2,3,4,5,6
+  - fw allow bocc-station from ${backup-centre} to ${tvs} modbus fc 1,2,3,4,5,6
+  - fw disable bocc-station 1
+  - fw disable bocc-station 2
+  - conduit create bocc-safety ${backup-centre.zone} safety
+  - fw allow bocc-safety from ${backup-centre} to ${sis} modbus fc 2,4
+  - fw disable bocc-safety 1
+  - conduit create ops-dmz operations dmz
+  - fw allow ops-dmz from ${historian} to ${report-server} https
+  - conduit create ent-dmz enterprise dmz
+  - fw allow ent-dmz from ${office} to ${report-server} https
+  - conduit create inet-dmz ${vendor.zone} dmz
+  - fw allow inet-dmz from ${vendor} to ${jump} rdp
+  - conduit create dmz-control dmz control
+  - fw allow dmz-control from ${jump} to ${ews} rdp
+  - host config ${jump} mfa=on
+tasks:
+  - "The OCC is lost: run `takeover start`. ${backup-centre} now runs the operator screen."
+  - Look at `hmi` or the HMI tab after a few seconds. The BOCC's screen goes stale, because its rules are still off.
+  - "Switch the BOCC's rules on: `fw list bocc-station`, then `fw enable bocc-station 1` and so on, including bocc-safety."
+  - Run `wait 10`, then `hmi`. The BOCC sees the line, and the trains are still moving.
+  - "From the BOCC, read the line voltage: `ssh ${backup-centre} modbus read ${plc} ir ${plc:voltage.line}`."
+  - "14:30, the OCC is back. Hand control back with `takeover end`, then switch the BOCC's rules off again."
+checks:
+  - name: The OCC has control again
+    state: { path: takeover, equals: false }
+  - name: The BOCC read the line itself while it had control
+    command: flows --mine
+    outputMatches: '${backup-centre}\s+${plc}\s+modbus'
+  - name: The BOCC's rules carried its polls during the takeover
+    command: fw list bocc-station
+    outputMatches: '\((?:[1-9][0-9]*) hits?\)'
+  - name: The BOCC is passive again
+    risk: standby-passive
+  - name: The BOCC can take over again next time
+    risk: takeover-ready
+  - name: The trains are still moving
+    state: { path: plant.trainsMoving, gte: 1 }
+  - name: Every data flow works
+    required: all
+hints:
+  - "`takeover start` stops the OCC hosts. `report` lists the BOCC's flows and why they are blocked: disabled rules."
+  - "`fw enable bocc-station 1`, `fw enable bocc-station 2` and `fw enable bocc-safety 1`. The FortiGate does the same with `set status enable` on the policy."
+  - "After `takeover end`, `fw disable` the same three rules. `takeover` then shows the BOCC on standby with its flows ready."
+solution:
+  - takeover start
+  - wait 10
+  - fw enable bocc-station 1
+  - fw enable bocc-station 2
+  - fw enable bocc-safety 1
+  - wait 10
+  - ssh ${backup-centre} modbus read ${plc} ir ${plc:voltage.line}
+  - takeover end
+  - fw disable bocc-station 1
+  - fw disable bocc-station 2
+  - fw disable bocc-safety 1
+learned: |
+  A takeover is a procedure, not a switch: the BOCC must already hold the
+  data, its network rules must already exist and be tested, and someone has
+  to turn them on and later off again. Practise it, because the day it is
+  needed is the day the OCC team is standing in a car park. Until then the
+  BOCC sends nothing, so it is no path into the station.
+refs:
+  - APTA SS-SEM-RP-007-09 (creating an alternate or backup operations control center)
+  - IEC 62443-2-1 (continuity of operations)
+  - ISO 22301 (business continuity management)

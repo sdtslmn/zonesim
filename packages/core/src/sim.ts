@@ -12,7 +12,8 @@ import { requiredFlowStatus, riskChecks, type FlowStatus, type RiskCheck } from 
 import { PROCESS_MODELS, WaterTank, type ProcessModel, type Readout } from "./process/index.js";
 import { Controller } from "./device.js";
 import { builtinSite } from "./sites/index.js";
-import type { Site } from "./site.js";
+import type { Site, SiteFlow } from "./site.js";
+import { UserError } from "./util.js";
 
 export const STEP = 0.5;
 /** Longest stretch of time the plant catches up on at once (e.g. after a laptop sleeps). */
@@ -125,6 +126,8 @@ export class Sim {
   hmiLast: Record<string, number> = {};
   /** What operators did on the HMI screen, newest last. */
   hmiActions: HmiAction[] = [];
+  /** True while the backup centre has taken over from the lost main centre. */
+  takeover = false;
 
   private seq = 0;
   private alertSeq = 1000;
@@ -219,8 +222,11 @@ export class Sim {
 
   private backgroundTraffic(): void {
     const hmi = this.site.hmi;
+    const hmiHost = this.hmiHost;
     this.site.polling.forEach((p, i) => {
+      if (!this.modeActive(p.when)) return;
       if (!this.every(`poll-${i}`, p.every, i + 1)) return;
+      if (this.net.host(p.from)?.down) return;
       if (p.service !== "modbus") {
         this.send(p.from, p.to, p.service as ServiceName, { background: true });
         return;
@@ -230,7 +236,7 @@ export class Sim {
         const r = this.modbus(p.from, p.to, { fc, addr: 0, count: 1 }, { background: true });
         ok &&= !!r.verdict.delivered;
       }
-      if (ok && hmi && p.from === hmi.host) {
+      if (ok && hmi && p.from === hmiHost) {
         this.hmiLast[p.to] = this.t;
         const dev = this.devices.get(p.to);
         if (dev) for (const t of ["coil", "di", "ir", "hr"] as const) for (const pt of dev.def.points[t]) this.hmiValues[pt.signal] = this.plant.get(pt.signal);
@@ -238,7 +244,7 @@ export class Sim {
     });
     if (hmi) {
       const commOk = this.t < hmi.timeout || this.t - (this.hmiLast[hmi.device] ?? 0) <= hmi.timeout;
-      if (!commOk && this.hmiCommOk) this.raise({ severity: "medium", title: `HMI lost communication with ${hmi.device}`, detail: `${hmi.host} has had no answer from ${hmi.device} for more than ${hmi.timeout} seconds. Operators are blind.`, src: hmi.host, dst: hmi.device, source: "process" });
+      if (!commOk && this.hmiCommOk) this.raise({ severity: "medium", title: `HMI lost communication with ${hmi.device}`, detail: `${hmiHost} has had no answer from ${hmi.device} for more than ${hmi.timeout} seconds. Operators are blind.`, src: hmiHost, dst: hmi.device, source: "process" });
       this.hmiCommOk = commOk;
     }
   }
@@ -247,11 +253,63 @@ export class Sim {
     return this.hmiCommOk;
   }
 
+  /** The host that runs the operator screen now: the backup centre during a takeover. */
+  get hmiHost(): string {
+    const h = this.site.hmi;
+    if (!h) return "";
+    return this.takeover && this.site.standby ? this.site.standby.backup : h.host;
+  }
+
+  /** Does a poll or flow with this when apply right now? */
+  modeActive(when?: "normal" | "takeover"): boolean {
+    return !when || (when === "takeover") === this.takeover;
+  }
+
+  /**
+   * The main control centre is lost: its hosts stop, and the backup centre
+   * takes over the operator screen and its own polls. The firewall rules for
+   * the backup are whatever the design says: if they are off, someone has to
+   * turn them on as part of the takeover.
+   */
+  startTakeover(): void {
+    const sb = this.site.standby;
+    if (!sb) throw new UserError("This site has no backup control centre.");
+    if (this.takeover) return;
+    this.advance();
+    this.takeover = true;
+    for (const name of sb.lost) {
+      const h = this.net.host(name);
+      if (h) h.down = `the ${sb.centre} is out of action`;
+    }
+    this.infra.refreshLinks();
+    // The backup's database was kept in step: its values count as fresh until its own polls are overdue.
+    for (const d of this.devices.keys()) this.hmiLast[d] = this.t;
+    this.raise({ severity: "high", title: `${sb.centre} lost: the ${sb.backupName} must take over`, detail: `${sb.lost.join(", ")} are out of action. ${sb.backup} now runs the operator screen and needs its takeover flows.`, src: sb.backup, source: "process" });
+    this.emit();
+  }
+
+  /** The main centre is back and takes control again. */
+  endTakeover(): void {
+    const sb = this.site.standby;
+    if (!sb) throw new UserError("This site has no backup control centre.");
+    if (!this.takeover) return;
+    this.advance();
+    this.takeover = false;
+    for (const name of sb.lost) {
+      const h = this.net.host(name);
+      if (h) delete h.down;
+    }
+    this.infra.refreshLinks();
+    for (const d of this.devices.keys()) this.hmiLast[d] = this.t;
+    this.emit();
+  }
+
   /** Controllers the HMI polls, its own controller first. */
   hmiDevices(): string[] {
     const h = this.site.hmi;
     if (!h) return [];
-    const polled = this.site.polling.filter((p) => p.from === h.host && p.service === "modbus" && this.devices.has(p.to)).map((p) => p.to);
+    const host = this.hmiHost;
+    const polled = this.site.polling.filter((p) => p.from === host && p.service === "modbus" && this.devices.has(p.to) && this.modeActive(p.when)).map((p) => p.to);
     return [...new Set([h.device, ...polled])].filter((d) => this.devices.has(d));
   }
 
@@ -284,7 +342,7 @@ export class Sim {
     const src = this.hmiSource(signal);
     if (!h || !src || (src.table !== "coil" && src.table !== "hr")) return undefined;
     if (this.site.ids.safety.includes(src.device)) return undefined;
-    return src.device === h.device || (this.site.ids.writers[src.device] ?? []).includes(h.host) ? src : undefined;
+    return src.device === h.device || (this.site.ids.writers[src.device] ?? []).includes(this.hmiHost) ? src : undefined;
   }
 
   /**
@@ -301,7 +359,7 @@ export class Sim {
     else {
       const value = point.table === "coil" ? (raw ? 1 : 0) : Math.round(raw);
       const fc = point.table === "coil" ? 5 : 6;
-      const r = this.modbus(h.host, point.device, { fc, addr: point.addr, values: [value] });
+      const r = this.modbus(this.hmiHost, point.device, { fc, addr: point.addr, values: [value] });
       if (!r.verdict.delivered) action = { t: this.t, text, ok: false, result: `no response from ${point.device}`, detail: r.verdict.reason };
       else if (!r.reply?.ok) {
         const ex = r.reply?.exception;
@@ -384,6 +442,9 @@ export class Sim {
     if (service === "modbus" && fc !== undefined && WRITE_FCS.includes(fc) && this.devices.has(dst.name)) {
       if (ids.safety.includes(dst.name)) {
         this.raise({ severity: "critical", title: "Modbus write to the safety system", detail: `${src.name} (${src.ip}) sent ${detail ?? `function code ${fc}`} to ${dst.name}. Safety systems should never be written to over the plant network.`, src: src.name, dst: dst.name, source: "ids" });
+      } else if (this.site.standby && src.name === this.site.standby.backup && !this.takeover) {
+        const sb = this.site.standby;
+        this.raise({ severity: "high", title: `Modbus write from the passive ${sb.backupName}`, detail: `${src.ip} (${src.name}) sent ${detail ?? `function code ${fc}`} to ${dst.name} while the ${sb.centre} has control. The ${sb.backupName} should send nothing until it takes over.`, src: src.name, dst: dst.name, source: "ids" });
       } else if (!(ids.writers[dst.name] ?? []).includes(src.name)) {
         const normal = ids.writers[dst.name]?.length ? `Only ${ids.writers[dst.name].join(" and ")} normally write to this controller.` : "Nothing normally writes to this controller.";
         this.raise({ severity: "high", title: `Unauthorized Modbus write to ${dst.name}`, detail: `${src.ip} sent ${detail ?? `function code ${fc}`} to ${dst.name}. ${normal}`, src: src.name, dst: dst.name, source: "ids" });
@@ -435,12 +496,24 @@ export class Sim {
 
   // ------------------------------------------------------------ views
 
+  /** Flows the plant needs right now: not the other mode's flows, and not flows whose every path runs through a host that is out of action. */
+  activeFlows(): SiteFlow[] {
+    const up = (n: string) => !this.net.host(n)?.down;
+    return this.site.flows.filter((f) => this.modeActive(f.when) && f.paths.some((p) => p.every((h) => up(h.from) && up(h.to))));
+  }
+
   requiredFlows(): FlowStatus[] {
-    return requiredFlowStatus(this.net, this.site.flows);
+    return requiredFlowStatus(this.net, this.activeFlows());
+  }
+
+  /** Takeover flows while the main centre has control: would they work once their rules are enabled? */
+  standbyFlows(): FlowStatus[] {
+    if (this.takeover) return [];
+    return requiredFlowStatus(this.net, this.site.flows.filter((f) => f.when === "takeover"), { withDisabled: true });
   }
 
   risks(): RiskCheck[] {
-    return riskChecks(this.net, this.site);
+    return riskChecks(this.net, this.site, { takeover: this.takeover });
   }
 
   snapshot(): SimSnapshot {
@@ -448,7 +521,8 @@ export class Sim {
       t: this.t,
       site: { id: this.site.id, name: this.site.name },
       plant: { model: this.plant.model, ...this.plant.snapshot(), alarms: this.plant.alarms() },
-      hmi: { online: this.hmiOnline, lastPlc: this.site.hmi ? this.hmiLast[this.site.hmi.device] ?? 0 : 0 },
+      hmi: { online: this.hmiOnline, lastPlc: this.site.hmi ? this.hmiLast[this.site.hmi.device] ?? 0 : 0, host: this.hmiHost },
+      takeover: this.takeover,
       ...this.net.toJSON(),
       required: this.requiredFlows().map((f) => ({ id: f.flow.id, title: f.flow.title, ok: f.ok, reason: f.reason })),
       risks: this.risks(),
@@ -461,7 +535,8 @@ export interface SimSnapshot {
   t: number;
   site: { id: string; name: string };
   plant: { model: string; alarms: { id: string; text: string; severity: string }[] } & Record<string, unknown>;
-  hmi: { online: boolean; lastPlc: number };
+  hmi: { online: boolean; lastPlc: number; host: string };
+  takeover: boolean;
   hosts: Host[];
   zones: Network["zones"];
   conduits: Network["conduits"];

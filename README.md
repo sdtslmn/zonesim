@@ -9,7 +9,7 @@ and work from where that person works: the HMI, the firewall and switches in
 their own command lines (FortiOS, Hirschmann HiOS, Cisco IOS), the alerts, or
 a foothold in the office. There are four plants to practise on (a water
 treatment plant, a gas compressor station, a data centre and a metro line),
-45 labs, and you can load your own site. It runs in your browser, and nothing real is
+46 labs, and you can load your own site. It runs in your browser, and nothing real is
 touched.
 
 **Try it in your browser: [sdtslmn.github.io/zonesim](https://sdtslmn.github.io/zonesim/)**
@@ -32,6 +32,9 @@ step. [Open this lab](https://sdtslmn.github.io/zonesim/?lab=i03), or see the
   the chilled water pumps and the servers shut down within minutes. On the
   metro, open the feeder breaker and trains are stranded in the tunnel, or
   bypass the emergency trip and the third rail goes live with a crew on it.
+- **Take over from the backup centre.** The metro is run from an OCC, with a
+  backup OCC that stays passive, its firewall rules built but switched off.
+  Lose the OCC with `takeover start` and bring the line back from the BOCC.
 - **Run it from the HMI.** Each plant has an operator screen in the
   high-performance HMI style. Click a pump, the compressor or a chiller to
   start, stop or change a setpoint. Every command is a Modbus write from the
@@ -72,14 +75,14 @@ has its own set, from a tour to a full zone and conduit design.
 | 2. Read the process over Modbus | 2. Read the pressures over Modbus | 2. Read temperatures and power over Modbus | 2. Read the traction power over Modbus |
 | 3. Change a setpoint like an operator | 3. Lower the discharge pressure like an operator | 3. Raise the chilled water temperature to save energy | 3. Start the tunnel fans earlier in a heatwave |
 | 4. Why a flat network is dangerous | 4. One write from the office trips the compressor | 4. Stopping the pumps from the office | 4. One write from the office stops every train |
-| 5. Group the hosts into zones | 5. Group the station into zones | 5. Group the facility systems into zones | 5. Group the station into zones |
+| 5. Group the hosts into zones | 5. Group the station into zones | 5. Group the facility systems into zones | 5. Group the OCC and the station into zones |
 | 6. Connect the zones with conduits | 6. Connect the zones with conduits | 6. Connect the zones with conduits | 6. Connect the zones with conduits |
-| 7. Filter Modbus function codes | 7. Filter Modbus across the WAN | 7. Make monitoring read-only | 7. Filter Modbus across the WAN |
+| 7. Filter Modbus function codes | 7. Filter Modbus across the WAN | 7. Make monitoring read-only | 7. Keep the BOCC passive, and ready to take over |
 | 8. Office reports through the DMZ | 8. Compressor maker support through a jump host | 8. Chiller vendor support through a jump host | 8. Traction power maker support through a jump host |
 | 9. Vendor remote access through a jump host | 9. The gas bill does not add up | 9. The hall is running hot | 9. Trains keep stopping |
 | 10. Investigate an unauthorized write | 10. Someone bypassed the pressure trip | 10. Someone isolated the fire suppression | 10. The track is live with a crew on it |
-| 11. Someone bypassed the safety system | 11. Segment the whole station from scratch | 11. Segment the whole facility from scratch | 11. Segment the whole station from scratch |
-| 12. Segment the whole plant from scratch | | | |
+| 11. Someone bypassed the safety system | 11. Segment the whole station from scratch | 11. Segment the whole facility from scratch | 11. The OCC is evacuated, take over from the BOCC |
+| 12. Segment the whole plant from scratch | | | 12. Segment the whole line from scratch |
 
 Link straight to a lab with `?lab=`, for example
 [?lab=i03](https://sdtslmn.github.io/zonesim/?lab=i03) (Riverside),
@@ -94,7 +97,7 @@ Link straight to a lab with `?lab=`, for example
 | [Riverside water treatment plant](sites/riverside-water.yaml) | A tank filled by a pump, chlorine dosing, a high-level safety trip | plc-1, sis-1 | office PC, historian and its DMZ copy, jump host, vendor laptop |
 | [Kestrel compressor station](sites/gas-compressor-station.yaml) | Pipeline compressor with discharge pressure control, anti-surge recycle, ESD trip, relief valve | ucp-1, esd-1, flow computer fc-1 | the pipeline control centre over a WAN, the compressor maker over the internet |
 | [Harbour data centre](sites/data-centre-cooling.yaml) | N+1 chillers, chilled water pumps, CRAH units, IT load and PUE | cpc-1, fire panel fp-1, power meter pm-1 | BMS, DCIM, a customer portal for colocation tenants, the chiller vendor |
-| [Meridian Line metro](sites/metro-line.yaml) | Traction power (rectifier, 750 V DC feeder with overcurrent protection), trains, tunnel ventilation with fire mode | traction power tps-1, tunnel ventilation tvc-1, emergency trip system ets-1 | the OCC and the backup OCC over the metro WAN, the traction power maker over the internet |
+| [Meridian Line metro](sites/metro-line.yaml) | Traction power (rectifier, 750 V DC feeder with overcurrent protection), trains, tunnel ventilation with fire mode | traction power tps-1, tunnel ventilation tvc-1, emergency trip system ets-1 | SCADA, historian and engineering at the OCC over the backbone, a passive backup OCC, the traction power maker over the internet |
 
 Every plant starts on one flat network, with every data flow working and
 most security checks failing. Riverside also comes as
@@ -106,7 +109,7 @@ register maps are fictional.
 
 ![Harbour data centre in lab D4: the chilled water pumps were stopped from the office PC and the cold aisle is above the recommended 27 °C](docs/images/web-dc.png)
 
-![Meridian Line metro after one Modbus write from the office PC opened the feeder breaker: four trains stranded in the tunnel, shown on the station control room HMI](docs/images/web-metro.png)
+![Meridian Line metro after one Modbus write from the office PC opened the feeder breaker: four trains stranded in the tunnel, shown on the OCC SCADA's HMI](docs/images/web-metro.png)
 
 For example, Riverside's hosts:
 

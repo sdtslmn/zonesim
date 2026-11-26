@@ -94,12 +94,17 @@ export interface SiteConduit {
   rules: string[];
 }
 
+/** When a poll runs or a flow is needed: always (left out), in normal operation, or while the backup centre has taken over. */
+export type SiteMode = "normal" | "takeover";
+export const SITE_MODES: SiteMode[] = ["normal", "takeover"];
+
 export interface SitePoll {
   from: string;
   to: string;
   service: string;
   fc?: number[];
   every: number;
+  when?: SiteMode;
 }
 
 export interface SiteHop {
@@ -114,6 +119,23 @@ export interface SiteFlow {
   title: string;
   why: string;
   paths: SiteHop[][];
+  when?: SiteMode;
+}
+
+/**
+ * A main control centre with a passive backup. The backup sends nothing to the
+ * plant until the main centre is lost; then the hosts in lost stop, and the
+ * backup takes over the HMI role and its own polls and flows (when: takeover).
+ */
+export interface SiteStandby {
+  /** What the main centre is called, e.g. OCC. */
+  centre: string;
+  /** What the backup centre is called, e.g. BOCC. */
+  backupName: string;
+  /** The backup centre's control system host. */
+  backup: string;
+  /** Hosts that stop when the main centre is lost. */
+  lost: string[];
 }
 
 export interface Site {
@@ -132,6 +154,7 @@ export interface Site {
   hmi?: { host: string; device: string; timeout: number };
   polling: SitePoll[];
   flows: SiteFlow[];
+  standby?: SiteStandby;
   ids: { writers: Record<string, string[]>; safety: string[]; identify: string[] };
 }
 
@@ -201,6 +224,9 @@ function mergeSite(base: Raw, over: Raw): Raw {
         break;
       case "flows":
         out[key] = mergeNamed(base[key], value, "id");
+        break;
+      case "standby":
+        out.standby = isObj(base.standby) && isObj(value) ? { ...base.standby, ...value } : clone(value);
         break;
       case "devices":
         out[key] = mergeDevices(base[key], value);
@@ -282,6 +308,7 @@ export function renameInSite(site: Raw, map: Record<string, string>, errors: str
   }
   if (isObj(out.devices)) out.devices = Object.fromEntries(Object.entries(out.devices).map(([k, v]) => [r(k) as string, v]));
   if (isObj(out.hmi)) out.hmi = { ...out.hmi, host: r(out.hmi.host), device: r(out.hmi.device) };
+  if (isObj(out.standby)) out.standby = { ...out.standby, backup: r(out.standby.backup), ...(Array.isArray(out.standby.lost) ? { lost: out.standby.lost.map(r) } : {}) };
   if (isObj(out.network) && Array.isArray(out.network.switches)) {
     for (const sw of out.network.switches as Raw[]) if (isObj(sw.ports)) sw.ports = Object.fromEntries(Object.entries(sw.ports).map(([k, v]) => [k, r(v)]));
   }
@@ -601,6 +628,15 @@ function normalize(raw: Raw, chain: string[], c: Checker): Site | undefined {
     return { from, to, service, ...(fc ? { fc } : {}) };
   };
 
+  const modeOf = (v: unknown, where: string): SiteMode | undefined => {
+    if (v === undefined) return undefined;
+    if (typeof v !== "string" || !SITE_MODES.includes(v as SiteMode)) {
+      c.errors.push(`${where}.when must be normal or takeover`);
+      return undefined;
+    }
+    return v as SiteMode;
+  };
+
   // polling
   const polling: SitePoll[] = [];
   c.list(raw.polling, "polling", false).forEach((p, i) => {
@@ -610,7 +646,8 @@ function normalize(raw: Raw, chain: string[], c: Checker): Site | undefined {
     const every = c.num(p.every, `${where}.every`);
     if (Number.isFinite(every) && every < 1) c.errors.push(`${where}.every must be at least 1 second`);
     if (hop.service === "modbus" && !devices[hop.to]) c.errors.push(`${where}: ${hop.to} is not a Modbus device`);
-    polling.push({ ...hop, every });
+    const when = modeOf(p.when, where);
+    polling.push({ ...hop, every, ...(when ? { when } : {}) });
   });
 
   // flows
@@ -628,8 +665,27 @@ function normalize(raw: Raw, chain: string[], c: Checker): Site | undefined {
       const hop = checkHop(f, w);
       if (hop) paths = [[hop]];
     }
-    flows.push({ id: fid, title: typeof f.title === "string" ? f.title : flowTitle(paths), why: c.str(f.why, `${w}.why`, false), paths });
+    const when = modeOf(f.when, w);
+    flows.push({ id: fid, title: typeof f.title === "string" ? f.title : flowTitle(paths), why: c.str(f.why, `${w}.why`, false), paths, ...(when ? { when } : {}) });
   });
+
+  // standby: a passive backup centre
+  let standby: SiteStandby | undefined;
+  if (raw.standby !== undefined) {
+    if (!isObj(raw.standby)) c.errors.push("standby must be a map");
+    else {
+      const sb = raw.standby;
+      const backup = c.str(sb.backup, "standby.backup");
+      if (backup && !host(backup)) c.errors.push(`standby.backup: there is no host "${backup}"`);
+      const lost = c.list(sb.lost, "standby.lost").map((x) => c.str(x, "standby.lost"));
+      for (const x of lost) if (!host(x)) c.errors.push(`standby.lost: there is no host "${x}"`);
+      if (lost.includes(backup)) c.errors.push("standby.lost must not include the backup host");
+      if (hmi && !lost.includes(hmi.host)) c.errors.push(`standby.lost must include the HMI host ${hmi.host}: the backup takes over its role`);
+      standby = { centre: typeof sb.centre === "string" ? sb.centre : "main centre", backupName: typeof sb.backupName === "string" ? sb.backupName : "backup centre", backup, lost };
+    }
+  }
+  for (const f of flows) if (f.when === "takeover" && !standby) c.errors.push(`flow ${f.id}: when: takeover needs a standby section`);
+  for (const [i, p] of polling.entries()) if (p.when === "takeover" && !standby) c.errors.push(`polling[${i + 1}]: when: takeover needs a standby section`);
 
   // ids
   const idsRaw = isObj(raw.ids) ? raw.ids : {};
@@ -663,6 +719,7 @@ function normalize(raw: Raw, chain: string[], c: Checker): Site | undefined {
     hmi,
     polling,
     flows,
+    ...(standby ? { standby } : {}),
     ids: { writers, safety, identify },
   };
 }
@@ -802,7 +859,7 @@ export interface LoadSiteOptions {
 
 // Field names, to catch typos such as "adress:" that would otherwise be ignored.
 const KEYS = {
-  top: ["schema", "id", "name", "description", "extends", "rename", "process", "hosts", "zones", "conduits", "devices", "network", "hmi", "polling", "flows", "ids"],
+  top: ["schema", "id", "name", "description", "extends", "rename", "process", "hosts", "zones", "conduits", "devices", "network", "hmi", "polling", "flows", "standby", "ids"],
   network: ["firewall", "switches"],
   firewall: ["name", "vendor", "model", "firmware", "hostname", "ip", "otSignatures"],
   switch: ["name", "remove", "vendor", "model", "firmware", "hostname", "ip", "ports"],
@@ -813,8 +870,9 @@ const KEYS = {
   device: ["remove", "title", "vendor", "product", "revision", "points"],
   point: ["addr", "tag", "signal", "description", "units"],
   hmi: ["host", "device", "timeout"],
-  poll: ["from", "to", "service", "fc", "every"],
-  flow: ["id", "remove", "title", "why", "from", "to", "service", "fc", "paths"],
+  poll: ["from", "to", "service", "fc", "every", "when"],
+  flow: ["id", "remove", "title", "why", "from", "to", "service", "fc", "paths", "when"],
+  standby: ["centre", "backupName", "backup", "lost"],
   hop: ["from", "to", "service", "fc"],
   ids: ["writers", "safety", "identify"],
 };
@@ -851,6 +909,7 @@ export function unknownFields(raw: Raw): string[] {
   if (Array.isArray(raw.flows))
     for (const f of raw.flows) if (isObj(f) && Array.isArray(f.paths)) for (const p of f.paths) list(p, KEYS.hop, `flow ${String(f.id)} hop`, (_x, i) => String(i + 1));
   check(raw.hmi, KEYS.hmi, "hmi");
+  check(raw.standby, KEYS.standby, "standby");
   check(raw.network, KEYS.network, "network");
   if (isObj(raw.network)) {
     check(raw.network.firewall, KEYS.firewall, "network.firewall");

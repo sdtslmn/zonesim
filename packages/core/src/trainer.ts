@@ -39,6 +39,7 @@ ${C.bold("Look around")}
   hmi                            what the operator sees on the HMI
   ssh HOST [COMMAND]             log in to a host; its commands then send traffic from it
   devices, ssh DEVICE            the firewall and switches, in their own command line
+  takeover [start|end]           lose the main control centre, or bring it back (metro)
 ${C.bold("Design zones and conduits")}
   zone list|create|add|show|set|delete
   conduit list|create|show|delete

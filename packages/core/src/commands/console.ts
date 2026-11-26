@@ -112,13 +112,14 @@ const plant: CommandFn = (args, { io, sim }) => {
   const out: string[] = [];
   const pad = (s: string) => `  ${s}`.padEnd(29);
   out.push(`${C.bold(sim.site.name)}   plant time ${clock(sim.t)}`);
+  if (sim.site.standby && sim.takeover) out.push(C.yellow(`  The ${sim.site.standby.centre} is lost: ${sim.site.standby.backup} at the ${sim.site.standby.backupName} has taken over.`));
   for (const r of sim.readouts()) {
     const value = r.bar !== undefined ? `${paint(r.state, r.text.padEnd(10))} ${bar(r.bar)}` : paint(r.state, r.text);
     out.push(pad(r.label) + value + (r.note ? `  ${C.gray(r.note)}` : ""));
   }
   for (const n of sim.plant.notes()) out.push(`  ${C.red(n)}`);
   const hmiHost = sim.site.hmi;
-  if (hmiHost) out.push(pad(`HMI ${hmiHost.host}`) + `${sim.hmiOnline ? C.green("online") : C.red(`COMM FAIL: no data from ${hmiHost.device}`)}`);
+  if (hmiHost) out.push(pad(`HMI ${sim.hmiHost}`) + `${sim.hmiOnline ? C.green("online") : C.red(`COMM FAIL: no data from ${hmiHost.device}`)}`);
   out.push(pad("Alarms") + `${alarms.length ? alarms.map((a) => (a.severity === "critical" || a.severity === "high" ? C.red(a.text) : C.yellow(a.text))).join("; ") : C.green("none")}`);
   out.push(pad("Data flows") + `${okCount === flows.length ? C.green(`${okCount}/${flows.length} working`) : C.red(`${okCount}/${flows.length} working`)}`);
   for (const f of flows.filter((x) => !x.ok)) out.push(`    ${C.red("✘")} ${f.flow.title}\n      ${C.gray(f.reason)}`);
@@ -138,7 +139,7 @@ const hmi: CommandFn = (args, { io, sim }) => {
   }
   if (args[0] === "actions" || args[0] === "log") {
     if (!sim.hmiActions.length) {
-      io.stdout(`No operator actions on ${h.host} yet.\n`);
+      io.stdout(`No operator actions on ${sim.hmiHost} yet.\n`);
       return 0;
     }
     io.stdout(table(["TIME", "OPERATOR ACTION", "RESULT", "DETAIL"], sim.hmiActions.map((a) => [clock(a.t), a.text, a.ok ? C.green(a.result) : C.red(a.result), a.detail ?? ""])));
@@ -147,7 +148,7 @@ const hmi: CommandFn = (args, { io, sim }) => {
   const online = sim.hmiOnline;
   const W = 64;
   const row = (s: string) => `│ ${s}${" ".repeat(Math.max(0, W - 2 - s.replace(/\x1b\[[0-9;]*m/g, "").length))} │`;
-  const title = `${h.host}  ${sim.site.name}`.slice(0, W - 2);
+  const title = `${sim.hmiHost}  ${sim.site.name}${sim.takeover && sim.site.standby ? `  (${sim.site.standby.backupName})` : ""}`.slice(0, W - 2);
   const lines = [`┌${"─".repeat(W)}┐`, row(C.bold(title)), row("")];
   for (const r of sim.hmiReadouts()) {
     const label = r.label.length > 27 ? r.label.slice(0, 26) + "…" : r.label;
@@ -285,6 +286,7 @@ const FW_HELP = `fw list [CONDUIT]                                   rules, top 
 fw allow CONDUIT from SRC to DST SERVICE [fc CODES] [at N]
 fw deny  CONDUIT from SRC to DST SERVICE [at N]
 fw delete CONDUIT N                                 delete rule N
+fw disable CONDUIT N, fw enable CONDUIT N           keep a rule but switch it off or on again
 fw log [N]                                          the last N blocked connections (default 15)
 
 SRC and DST are a host, a zone, or any. SERVICE is modbus, http, https, rdp,
@@ -309,7 +311,8 @@ function fwList(args: string[], io: CmdContext["io"], sim: CmdContext["sim"]): n
     c.rules.forEach((r: Rule, i: number) => {
       const act = r.action === "allow" ? C.green("allow") : C.red("deny ");
       const fc = r.fc ? ` fc ${r.fc.join(",")}` : "";
-      io.stdout(`  ${String(i + 1).padStart(2)}  ${act}  ${endpointText(r.src)} → ${endpointText(r.dst)}  ${r.service}${fc}  ${C.gray(`(${r.hits} hit${r.hits === 1 ? "" : "s"})`)}\n`);
+      const off = r.disabled ? `  ${C.yellow("disabled")}` : "";
+      io.stdout(`  ${String(i + 1).padStart(2)}  ${act}  ${endpointText(r.src)} → ${endpointText(r.dst)}  ${r.service}${fc}${off}  ${C.gray(`(${r.hits} hit${r.hits === 1 ? "" : "s"})`)}\n`);
     });
     io.stdout(`  ${C.gray(" *  deny   everything else")}\n`);
   }
@@ -385,6 +388,18 @@ const fw: CommandFn = (args, { io, sim }) => {
       needArgs(rest, 2, "fw delete CONDUIT N");
       const r = net.deleteRule(rest[0], parseInt(rest[1], 10));
       io.stdout(`deleted rule ${rest[1]} from conduit ${rest[0].toLowerCase()}: ${ruleText(r)}\n`);
+      return 0;
+    }
+    case "disable":
+    case "enable": {
+      needArgs(rest, 2, `fw ${sub} CONDUIT N`);
+      const c = net.needConduit(rest[0]);
+      const n = parseInt(rest[1], 10);
+      const r = c.rules[n - 1];
+      if (!r) throw new UserError(`conduit ${c.name} has no rule ${rest[1]}. fw list ${c.name} shows the numbers.`);
+      if (sub === "disable") r.disabled = true;
+      else delete r.disabled;
+      io.stdout(`conduit ${c.name} rule ${n} ${sub === "disable" ? "disabled" : "enabled"}: ${ruleText(r)}\n`);
       return 0;
     }
     case "log": {
@@ -498,8 +513,15 @@ const report: CommandFn = (args, { io, sim }) => {
   out.push("", C.bold("Conduits"));
   out.push(net.conduits.length ? table(["CONDUIT", "ZONES", "ALLOW", "DENY"], net.conduits.map((c) => [c.name, `${c.zones[0]} ↔ ${c.zones[1]}`, String(c.rules.filter((r) => r.action === "allow").length), String(c.rules.filter((r) => r.action === "deny").length)])).trimEnd() : "  none");
   const flowsList = sim.requiredFlows();
+  const sb = sim.site.standby;
+  if (sb && sim.takeover) out.push("", C.yellow(`The ${sb.centre} is lost and the ${sb.backupName} has taken over. takeover end brings the ${sb.centre} back.`));
   out.push("", C.bold(`Plant data flows  ${flowsList.filter((f) => f.ok).length}/${flowsList.length} working`));
   for (const f of flowsList) out.push(`  ${f.ok ? C.green("✔") : C.red("✘")} ${f.flow.title}${f.ok ? "" : `\n      ${C.gray(f.reason)}`}`);
+  const standby = sim.standbyFlows();
+  if (sb && standby.length) {
+    out.push("", C.bold(`Takeover flows  ${standby.filter((f) => f.ok).length}/${standby.length} ready`) + C.gray(`  (needed once the ${sb.backupName} takes over; disabled rules count as ready)`));
+    for (const f of standby) out.push(`  ${f.ok ? C.green("✔") : C.red("✘")} ${f.flow.title}${f.ok ? "" : `\n      ${C.gray(f.reason)}`}`);
+  }
   const risks = sim.risks();
   out.push("", C.bold(`Security checks  ${risks.filter((r) => r.ok).length}/${risks.length} passed`));
   for (const r of risks) out.push(`  ${r.ok ? C.green("✔") : C.red("✘")} ${r.title}\n      ${C.gray(r.detail)}`);
@@ -553,6 +575,49 @@ export const ssh: CommandFn = async (args, ctx) => {
   return 0;
 };
 
+// ---------------------------------------------------------------- takeover
+
+const takeoverCmd: CommandFn = (args, { io, sim }) => {
+  const sb = sim.site.standby;
+  if (wantsHelp(args)) {
+    io.stdout(`takeover          who has control: the main centre or the backup
+takeover start    the main centre is lost: its hosts stop and the backup takes over
+takeover end      the main centre is back and takes control again
+`);
+    return 0;
+  }
+  if (!sb) throw new UserError("This site has no backup control centre.");
+  const [sub = "status"] = args;
+  if (sub === "start") {
+    if (sim.takeover) {
+      io.stdout(`The ${sb.backupName} already has control.\n`);
+      return 0;
+    }
+    sim.startTakeover();
+    io.stdout(`${C.yellow(`The ${sb.centre} is lost.`)} ${sb.lost.join(", ")} are out of action.\n${sb.backup} at the ${sb.backupName} now runs the operator screen and polls the plant.\n`);
+    const blocked = sim.requiredFlows().filter((f) => !f.ok);
+    if (blocked.length) io.stdout(`${C.red(`${blocked.length} flow${blocked.length === 1 ? "" : "s"} blocked`)}, for example ${blocked[0].flow.title}: ${blocked[0].reason}\nIf the ${sb.backupName}'s rules are disabled, enabling them is part of the takeover: fw list, then fw enable CONDUIT N.\n`);
+    else io.stdout(C.green(`Every flow the ${sb.backupName} needs works.\n`));
+    return 0;
+  }
+  if (sub === "end") {
+    if (!sim.takeover) {
+      io.stdout(`The ${sb.centre} already has control.\n`);
+      return 0;
+    }
+    sim.endTakeover();
+    io.stdout(`The ${sb.centre} is back and has control. The ${sb.backupName} goes back to standby: switch its rules off again (fw disable).\n`);
+    return 0;
+  }
+  if (sub !== "status") throw new UserError(`unknown subcommand "${sub}". Try takeover --help.`);
+  if (sim.takeover) io.stdout(`${C.yellow(`The ${sb.centre} is lost.`)} ${sb.backup} at the ${sb.backupName} has control.\n`);
+  else {
+    const ready = sim.standbyFlows();
+    io.stdout(`The ${sb.centre} has control. ${sb.backup} at the ${sb.backupName} is on standby.\nTakeover flows ready: ${ready.filter((f) => f.ok).length}/${ready.length} (disabled rules count as ready).\n`);
+  }
+  return 0;
+};
+
 // ---------------------------------------------------------------- network devices
 
 const devicesCmd: CommandFn = (args, { io, sim }) => {
@@ -599,6 +664,7 @@ export function registerConsole(shell: Shell): void {
   shell.register("report", con(report));
   shell.register("ssh", { run: ssh, where: "both" });
   shell.register("devices", con(devicesCmd, "the firewall and switches"));
+  shell.register("takeover", con(takeoverCmd, "hand control to the backup centre and back"));
 }
 
 export type { Host };

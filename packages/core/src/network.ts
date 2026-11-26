@@ -57,6 +57,8 @@ export interface Host {
   mfa: boolean;
   /** Where the host plugs in: a switch and port. Hosts beyond the firewall have none. */
   port?: { device: string; port: string };
+  /** Set while the host is out of action (its control centre is lost): why. */
+  down?: string;
   /** False when its switch port is shut down or not a member of its VLAN. */
   link: boolean;
   /** Why the link is down, for messages. */
@@ -125,7 +127,7 @@ export function endpointText(e: Endpoint): string {
 
 export function ruleText(r: Rule): string {
   const fc = r.fc ? ` fc ${r.fc.join(",")}` : "";
-  return `${r.action} from ${endpointText(r.src)} to ${endpointText(r.dst)} ${r.service}${fc}`;
+  return `${r.action} from ${endpointText(r.src)} to ${endpointText(r.dst)} ${r.service}${fc}${r.disabled ? " (disabled)" : ""}`;
 }
 
 export class Network {
@@ -433,7 +435,7 @@ export class Network {
    * function code the deep packet inspection is applied too; without one only
    * the connection is checked (what a port scan sees).
    */
-  evaluate(src: Host, dst: Host, service: ServiceName, fc?: number, opts: { count?: boolean } = {}): Verdict {
+  evaluate(src: Host, dst: Host, service: ServiceName, fc?: number, opts: { count?: boolean; withDisabled?: boolean } = {}): Verdict {
     const listens = service === "icmp" || dst.services.includes(service);
     const done = (v: Omit<Verdict, "delivered">): Verdict => ({ ...v, delivered: v.allowed && listens });
     if (src === dst) return done({ allowed: true, reason: "same host", intraZone: true });
@@ -444,7 +446,7 @@ export class Network {
     let fcMiss: number | undefined;
     for (let i = 0; i < c.rules.length; i++) {
       const r = c.rules[i];
-      if (r.disabled) continue;
+      if (r.disabled && !opts.withDisabled) continue;
       if ((r.srcintf && r.srcintf !== src.zone) || (r.dstintf && r.dstintf !== dst.zone)) continue;
       if (!this.endpointMatches(r.src, src) || !this.endpointMatches(r.dst, dst) || !this.serviceMatches(r.service, service)) continue;
       if (r.action === "allow" && r.fc && fc !== undefined && !r.fc.includes(fc)) {

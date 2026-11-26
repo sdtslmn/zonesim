@@ -1,0 +1,110 @@
+id: m07-passive-bocc
+site: metro-line
+title: Keep the BOCC passive, and ready to take over
+level: intermediate
+minutes: 15
+topic: Deep packet inspection
+intro: |
+  A colleague built the conduits, including the ones the BOCC will need on
+  the day it takes over. The trouble: they are switched on. Right now, with
+  the OCC in control, the BOCC can open the feeder breaker, and so can
+  anyone who gets into the BOCC. The OCC's own rules allow any Modbus
+  function too, including writes to the emergency trip system.
+
+  Make the BOCC passive at the network as well: build its rules exactly as
+  it will need them, then switch them off. Switching them on becomes a step
+  in the takeover procedure. Reads are function codes 1, 2, 3, 4 and 43;
+  writes are 5, 6, 15 and 16.
+setup:
+  - zone create enterprise --sl 1
+  - zone create dmz --sl 2
+  - zone create operations --sl 2
+  - zone create control --sl 3
+  - zone create station --sl 3
+  - zone create safety --sl 3
+  - zone set ${backup-centre.zone} --sl 3
+  - zone add enterprise ${office}
+  - zone add dmz ${report-server} ${jump}
+  - zone add operations ${historian}
+  - zone add control ${hmi} ${ews}
+  - zone add station ${plc} ${tvs}
+  - zone add safety ${sis}
+  - zone delete ${plc.zone}
+  - conduit create control-station control station
+  - fw allow control-station from ${hmi} to ${plc} modbus
+  - fw allow control-station from ${hmi} to ${tvs} modbus
+  - fw allow control-station from ${ews} to ${plc} modbus
+  - fw allow control-station from ${ews} to ${tvs} modbus
+  - conduit create control-safety control safety
+  - fw allow control-safety from ${hmi} to ${sis} modbus
+  - conduit create ops-control operations control
+  - fw allow ops-control from ${historian} to ${hmi} https
+  - conduit create control-bocc control ${backup-centre.zone}
+  - fw allow control-bocc from ${hmi} to ${backup-centre} https
+  - conduit create bocc-station ${backup-centre.zone} station
+  - fw allow bocc-station from ${backup-centre} to ${plc} modbus
+  - fw allow bocc-station from ${backup-centre} to ${tvs} modbus
+  - conduit create bocc-safety ${backup-centre.zone} safety
+  - fw allow bocc-safety from ${backup-centre} to ${sis} modbus
+  - conduit create ops-dmz operations dmz
+  - fw allow ops-dmz from ${historian} to ${report-server} https
+  - conduit create ent-dmz enterprise dmz
+  - fw allow ent-dmz from ${office} to ${report-server} https
+tasks:
+  - "See the problem: `takeover` says the BOCC is on standby, yet `test ${backup-centre} ${plc} modbus fc 5` gets through."
+  - Limit the OCC SCADA to function codes 1 to 6 on ${plc} and ${tvs}, and to 2 and 4 on ${sis}. The engineering workstation keeps full access to ${plc} and ${tvs}.
+  - Give the BOCC exactly the OCC SCADA's rights on ${plc}, ${tvs} and ${sis}, so a takeover changes nothing else.
+  - "Switch the BOCC's rules off: `fw disable bocc-station 1` and so on."
+  - Run `takeover` and `report`. The takeover flows are ready, and the BOCC is passive.
+  - "Prove it: `ssh ${backup-centre} modbus write ${plc} coil ${plc:feeder.command} 0` should time out. Then find it in `fw log`."
+checks:
+  - name: The BOCC stays passive while the OCC has control
+    risk: standby-passive
+  - name: The BOCC can take over once its rules are switched on
+    risk: takeover-ready
+  - name: No host can write to the safety system
+    risk: sis-read-only
+  - name: The OCC SCADA cannot send multiple-register writes to ${plc}
+    flow: { from: "${hmi}", to: "${plc}", service: modbus, fc: 16, expect: blocked }
+  - name: The OCC SCADA still runs the traction power
+    required: hmi-plc
+  - name: The OCC SCADA still runs the tunnel ventilation
+    required: hmi-tvs
+  - name: The OCC SCADA still sees the emergency trip status
+    required: hmi-sis
+  - name: Engineers still reach ${plc}
+    required: ews-plc
+  - name: You tried the feeder write from the BOCC and the firewall blocked it
+    command: fw log
+    outputMatches: '${backup-centre}\s+${plc}\s+modbus fc (5|6|15|16)'
+hints:
+  - "`fw list` shows the rule numbers. Replace a rule with `fw delete CONDUIT N` and a narrower `fw allow ... modbus fc 1,2,3,4,5,6`."
+  - "On control-safety and bocc-safety use `fc 2,4`. New rules go to the bottom of the conduit, so check the numbers again before you disable them."
+  - "`fw disable bocc-station 1`, `fw disable bocc-station 2` and `fw disable bocc-safety 1` switch the BOCC off. `takeover` then shows the takeover flows as ready."
+solution:
+  - fw delete control-station 1
+  - fw delete control-station 1
+  - fw allow control-station from ${hmi} to ${plc} modbus fc 1,2,3,4,5,6
+  - fw allow control-station from ${hmi} to ${tvs} modbus fc 1,2,3,4,5,6
+  - fw delete control-safety 1
+  - fw allow control-safety from ${hmi} to ${sis} modbus fc 2,4
+  - fw delete bocc-station 1
+  - fw delete bocc-station 1
+  - fw allow bocc-station from ${backup-centre} to ${plc} modbus fc 1,2,3,4,5,6
+  - fw allow bocc-station from ${backup-centre} to ${tvs} modbus fc 1,2,3,4,5,6
+  - fw disable bocc-station 1
+  - fw disable bocc-station 2
+  - fw delete bocc-safety 1
+  - fw allow bocc-safety from ${backup-centre} to ${sis} modbus fc 2,4
+  - fw disable bocc-safety 1
+  - "ssh ${backup-centre} modbus write ${plc} coil ${plc:feeder.command} 0   # times out, as it should"
+learned: |
+  A passive backup centre should be passive at the network too. Its rules
+  are built and tested in advance, identical to the OCC's, and switched off;
+  the takeover procedure switches them on. Some operators leave them on to
+  save a minute in a crisis and rely on the SCADA's control authority
+  instead. Then the BOCC is a live path to the station every day, and the
+  IDS has to flag any write from it while the OCC has control.
+refs:
+  - IEC 62443-3-3 SR 5.2 (zone boundary protection)
+  - APTA SS-SEM-RP-007-09 (creating an alternate or backup operations control center)

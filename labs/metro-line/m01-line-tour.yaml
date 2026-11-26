@@ -8,14 +8,21 @@ intro: |
   You have just joined ${site.name} as its OT security engineer. Your section
   of the ${tag.line} runs ${param.trains} trains on a ${param.lineVoltage} V
   third rail fed by substation ${tag.substation}, through the
-  ${tag.tunnel}. Before you change anything, find out what is there.
+  ${tag.tunnel}.
 
-  You are on the console, an out-of-band management station. It sends no
-  traffic on the station network. To act from a host, log in to it with ssh,
-  or run one command there with `ssh HOST COMMAND`.
+  The line is run from the operations control centre (OCC): the SCADA
+  servers, the historian and the engineering workstation all sit there, and
+  reach the controllers at the station over the metro backbone. The backup
+  OCC (BOCC) is passive. It sends nothing to the station until the OCC is
+  lost and it takes over.
+
+  You are on the console, an out-of-band management station. To act from a
+  host, log in to it with ssh, or run one command there with
+  `ssh HOST COMMAND`.
 tasks:
-  - Run `hosts`. Which three hosts are controllers? Which hosts are not at the station at all?
-  - Run `plant` and `hmi` to see the trains, the traction power, the tunnel and what the station control room sees.
+  - Run `hosts`. Which three hosts are the controllers at the station? Which host is the BOCC?
+  - Run `takeover`. Who has control now?
+  - Run `plant` and `hmi` to see the trains, the traction power, the tunnel and what the OCC screen shows.
   - "Ask the tunnel ventilation controller for its vendor, model and firmware from the engineering workstation: `ssh ${ews} modbus info ${tvs}`."
   - Write the tunnel ventilation controller's firmware version into firmware.txt.
   - Write the IP address of the emergency trip system ${sis} into ets-ip.txt.
@@ -25,7 +32,7 @@ checks:
   - name: ets-ip.txt holds the IP address of ${sis}
     file: { path: ets-ip.txt, matches: '${sis.ip}' }
 hints:
-  - "`hosts -o wide` adds each host's role and operating system. The OCC, the backup OCC and the traction power maker are remote."
+  - "`hosts -o wide` adds each host's role and switch port. The controllers have level 1, the BOCC has role backup-centre."
   - "`modbus info ${tvs}` reads the device identification (function code 43). Look for MajorMinorRevision."
   - "`echo ${tvs.firmware} > firmware.txt` writes a file, `cat firmware.txt` shows it."
 solution:
@@ -33,12 +40,13 @@ solution:
   - echo ${tvs.firmware} > firmware.txt
   - echo ${sis.ip} > ets-ip.txt
 learned: |
-  A metro station's control system reaches well beyond the station: the
-  operations control centre runs the line from kilometres away, a backup
-  control centre stands ready to take over, and the traction power maker
-  supports its equipment from the internet. The emergency trip system is the
-  one that protects people: it keeps the third rail dead while a crew works
-  on the track.
+  In a metro the control systems live at the OCC, often many kilometres
+  from the equipment they run, and the backbone carries their traffic to
+  every station. The BOCC holds a synchronised copy and stays silent until
+  it is needed. The emergency trip system at the substation is the one that
+  protects people: it keeps the third rail dead while a crew works on the
+  track.
 refs:
   - IEC 62443-2-1 (asset inventory)
   - CLC/TS 50701 (railway applications, cybersecurity)
+  - APTA SS-SEM-RP-007-09 (creating an alternate or backup operations control center)

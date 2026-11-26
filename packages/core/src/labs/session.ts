@@ -164,7 +164,11 @@ export class LabSession {
     if (c.required !== undefined) {
       const flows = sim.requiredFlows();
       const bad = flows.filter((f) => (c.required === "all" || f.flow.id === c.required) && !f.ok);
-      if (c.required !== "all" && !flows.some((f) => f.flow.id === c.required)) return fail(`unknown flow ${c.required}`);
+      if (c.required !== "all" && !flows.some((f) => f.flow.id === c.required)) {
+        const known = sim.site.flows.find((f) => f.id === c.required);
+        if (!known) return fail(`unknown flow ${c.required}`);
+        return fail(known.when === "takeover" ? `${known.title} is only needed once the ${sim.site.standby?.backupName ?? "backup"} takes over` : `${known.title} is paused: a host on it is out of action`);
+      }
       return bad.length ? fail(`${bad[0].flow.title}: ${bad[0].reason}${bad.length > 1 ? ` (and ${bad.length - 1} more)` : ""}`) : pass();
     }
 

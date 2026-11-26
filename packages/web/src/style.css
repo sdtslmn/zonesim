@@ -1514,6 +1514,15 @@ details.why summary,
   white-space: nowrap;
 }
 
+.hmi-takeover {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--h-p2);
+  background: #fff3d6;
+  font-weight: 700;
+  font-size: 11px;
+}
+
 .hmi-navs {
   display: flex;
   gap: 4px;

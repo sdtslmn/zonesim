@@ -13,22 +13,23 @@ export interface FlowStatus {
   reason: string;
 }
 
-function hopStatus(net: Network, hop: SiteHop): { ok: boolean; reason: string } {
+function hopStatus(net: Network, hop: SiteHop, withDisabled = false): { ok: boolean; reason: string } {
   const src = net.host(hop.from);
   const dst = net.host(hop.to);
   if (!src || !dst) return { ok: false, reason: `${hop.from} → ${hop.to}: unknown host` };
   for (const fc of hop.fc ?? [undefined]) {
-    const v = net.evaluate(src, dst, hop.service as ServiceName, fc);
+    const v = net.evaluate(src, dst, hop.service as ServiceName, fc, { withDisabled });
     if (!v.delivered) return { ok: false, reason: `${hop.from} → ${hop.to} ${hop.service}${fc !== undefined ? ` fc ${fc}` : ""}: ${v.reason}` };
   }
   return { ok: true, reason: "" };
 }
 
-export function requiredFlowStatus(net: Network, flows: SiteFlow[]): FlowStatus[] {
+/** Whether each flow gets through. withDisabled counts disabled rules as on: "would it work once they are enabled?" */
+export function requiredFlowStatus(net: Network, flows: SiteFlow[], opts: { withDisabled?: boolean } = {}): FlowStatus[] {
   return flows.map((flow) => {
     let firstReason = "";
     for (const path of flow.paths) {
-      const bad = path.map((h) => hopStatus(net, h)).find((s) => !s.ok);
+      const bad = path.map((h) => hopStatus(net, h, opts.withDisabled)).find((s) => !s.ok);
       if (!bad) return { flow, ok: true, reason: "" };
       firstReason ||= bad.reason;
     }
@@ -51,9 +52,9 @@ function reaches(net: Network, src: Host, dst: Host): string | undefined {
   return undefined;
 }
 
-export const RISK_IDS = ["segmented", "office-to-control", "internet-dmz-only", "sis-own-zone", "sis-read-only", "historian-read-only", "remote-access", "least-privilege"];
+export const RISK_IDS = ["segmented", "office-to-control", "internet-dmz-only", "sis-own-zone", "sis-read-only", "historian-read-only", "remote-access", "least-privilege", "standby-passive", "takeover-ready"];
 
-export function riskChecks(net: Network, site: Site): RiskCheck[] {
+export function riskChecks(net: Network, site: Site, opts: { takeover?: boolean } = {}): RiskCheck[] {
   const out: RiskCheck[] = [];
   const hosts = net.hosts;
   const role = (r: string) => hosts.find((h) => h.role === r);
@@ -135,6 +136,35 @@ export function riskChecks(net: Network, site: Site): RiskCheck[] {
       ok: !direct && jump.mfa,
       detail: direct || (!jump.mfa ? `MFA is off on ${jump.name}` : `no direct path from the internet, MFA on at ${jump.name}`),
     });
+  }
+
+  // A passive backup centre: it reaches no controller until it takes over, and its flows are ready for that day.
+  const sb = site.standby;
+  const backup = sb ? net.host(sb.backup) : undefined;
+  if (sb && backup) {
+    const devices = Object.keys(site.devices).map((d) => net.host(d)).filter((h): h is Host => !!h);
+    let active = "";
+    if (!opts.takeover)
+      for (const d of devices) if (!active) for (const fc of [3, 4, 1, 2, ...WRITE_FCS]) if (net.evaluate(backup, d, "modbus", fc).delivered) {
+        active = `${backup.name} can send function code ${fc} to ${d.name} while the ${sb.centre} has control`;
+        break;
+      }
+    out.push({
+      id: "standby-passive",
+      title: `The ${sb.backupName} stays passive until it takes over`,
+      ok: !active,
+      detail: opts.takeover ? `the ${sb.backupName} has taken over` : active || `${backup.name} reaches no controller; its rules are off until the takeover`,
+    });
+    const takeoverFlows = site.flows.filter((f) => f.when === "takeover");
+    if (takeoverFlows.length) {
+      const bad = requiredFlowStatus(net, takeoverFlows, { withDisabled: !opts.takeover }).find((f) => !f.ok);
+      out.push({
+        id: "takeover-ready",
+        title: `The ${sb.backupName} can take over`,
+        ok: !bad,
+        detail: bad ? `${bad.flow.id}: ${bad.reason}` : opts.takeover ? `the ${sb.backupName} reaches every controller it needs` : `every takeover flow works once its rules are enabled`,
+      });
+    }
   }
 
   // Least privilege: no "any" in allow rules.

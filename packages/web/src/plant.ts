@@ -14,6 +14,8 @@ export function statusStrip(sim: Sim): string {
   const open = sim.alerts.filter((a) => !a.acked).length;
   const pill = (cls: string, text: string, title = "") => `<span class="pill ${cls}"${title ? ` title="${esc(title)}"` : ""}>${esc(text)}</span>`;
   const parts = sim.readouts().filter((r) => r.strip).map((r) => pill(r.state, r.strip!, `${r.label}: ${r.text}${r.note ? ` (${r.note})` : ""}`));
+  const sb = sim.site.standby;
+  if (sb && sim.takeover) parts.unshift(pill("warn", `${sb.backupName} in control`, `The ${sb.centre} is lost. ${sb.backup} has taken over. Type takeover end to bring the ${sb.centre} back.`));
   if (sim.site.hmi) parts.push(pill(sim.hmiOnline ? "ok" : "bad", sim.hmiOnline ? "HMI online" : "HMI comm fail"));
   parts.push(
     pill(ok === flows.length ? "ok" : "bad", `Flows ${ok}/${flows.length}`, flows.filter((f) => !f.ok).map((f) => f.flow.title).join("\n")),
@@ -197,6 +199,16 @@ function spark(values: number[], max: number, cls: string): string {
   return `<svg class="spark" viewBox="0 0 200 40" width="100%" preserveAspectRatio="none"><polyline points="${pts}" class="${cls}"/></svg>`;
 }
 
+/** Flows the backup centre needs once it takes over, while the main centre still has control. */
+function standbyHtml(sim: Sim): string {
+  const sb = sim.site.standby;
+  const list = sim.standbyFlows();
+  if (!sb || !list.length) return "";
+  return `<h3>Takeover flows (${list.filter((f) => f.ok).length}/${list.length} ready)</h3>
+  <p class="meta">Needed once the ${esc(sb.backupName)} takes over. Until then it stays passive, so its rules can be switched off; ready means they would work once switched on.</p>
+  <ul class="results">${list.map((f) => `<li class="${f.ok ? "ok" : "bad"}">${esc(f.flow.title)}${f.ok ? "" : `<span class="detail">${esc(f.reason)}</span>`}</li>`).join("")}</ul>`;
+}
+
 export function plantPanel(sim: Sim): string {
   const flows = sim.requiredFlows();
   const risks = sim.risks();
@@ -214,8 +226,10 @@ export function plantPanel(sim: Sim): string {
   <div class="trends">${trends}</div>
   <table class="readouts">${readouts.map((r) => `<tr><td>${esc(r.label)}</td><td class="st-${r.state}">${esc(r.text)}</td><td class="meta">${esc(r.note ?? "")}</td></tr>`).join("")}</table>
   ${alarms.length ? `<ul class="alarms">${alarms.map((a) => `<li class="sev-${a.severity}">${esc(a.text)}</li>`).join("")}</ul>` : `<p class="meta">No process alarms.</p>`}
+  ${sim.site.standby && sim.takeover ? `<div class="notice warn">The ${esc(sim.site.standby.centre)} is lost and ${esc(sim.site.standby.backup)} at the ${esc(sim.site.standby.backupName)} has taken over. Flows through hosts at the ${esc(sim.site.standby.centre)} are paused. Type <code>takeover end</code> to bring it back.</div>` : ""}
   <h3>Plant data flows (${flows.filter((f) => f.ok).length}/${flows.length})</h3>
   <ul class="results">${flows.map((f) => `<li class="${f.ok ? "ok" : "bad"}">${esc(f.flow.title)}${f.ok ? "" : `<span class="detail">${esc(f.reason)}</span>`}</li>`).join("")}</ul>
+  ${standbyHtml(sim)}
   <h3>Security checks (${risks.filter((r) => r.ok).length}/${risks.length})</h3>
   <ul class="results">${risks.map((r) => `<li class="${r.ok ? "ok" : "bad"}">${esc(r.title)}<span class="detail">${esc(r.detail)}</span></li>`).join("")}</ul>
   <h3>Open alerts</h3>

@@ -10,6 +10,7 @@ import { TABLES } from "./modbus.js";
 
 const NAME = { type: "string", pattern: "^[a-z][a-z0-9-]{0,23}$" };
 const FC = { type: "array", items: { type: "integer", minimum: 1, maximum: 127 } };
+const WHEN = { enum: ["normal", "takeover"], description: "Only in normal operation, or only while the backup centre has taken over. Leave out for always." };
 
 export function siteJsonSchema(): Record<string, unknown> {
   const models = Object.values(PROCESS_MODELS);
@@ -188,7 +189,7 @@ export function siteJsonSchema(): Record<string, unknown> {
       polling: {
         type: "array",
         description: "Traffic the plant generates by itself. Replaces the inherited list.",
-        items: { ...hop, required: ["from", "to", "service", "every"], properties: { ...hop.properties, every: { type: "number", minimum: 1 } } },
+        items: { ...hop, required: ["from", "to", "service", "every"], properties: { ...hop.properties, every: { type: "number", minimum: 1 }, when: WHEN } },
       },
       flows: {
         type: "array",
@@ -207,7 +208,20 @@ export function siteJsonSchema(): Record<string, unknown> {
             service: { enum: SITE_SERVICES },
             fc: FC,
             paths: { type: "array", items: { type: "array", items: hop } },
+            when: WHEN,
           },
+        },
+      },
+      standby: {
+        type: "object",
+        description: "A main control centre with a passive backup. The backup sends nothing to the plant until the main centre is lost (takeover start); then the hosts in lost stop and the backup takes over the HMI role and the polls and flows marked when: takeover.",
+        required: ["backup", "lost"],
+        additionalProperties: false,
+        properties: {
+          centre: { type: "string", description: "What the main centre is called, for example OCC" },
+          backupName: { type: "string", description: "What the backup centre is called, for example BOCC" },
+          backup: NAME,
+          lost: { type: "array", items: NAME, description: "Hosts that stop when the main centre is lost. Must include the HMI host." },
         },
       },
       ids: {

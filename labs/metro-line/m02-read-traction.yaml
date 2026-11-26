@@ -5,16 +5,16 @@ level: beginner
 minutes: 10
 topic: Modbus basics
 intro: |
-  The station control room workstation ${hmi} polls the traction power
-  controller ${plc} over Modbus TCP every few seconds. Measurements such as
-  the line voltage and the feeder current sit in input registers as whole
-  numbers in volts and amps. Settings such as the overcurrent trip of feeder
-  breaker ${tag.feeder} sit in holding registers.
+  The OCC SCADA ${hmi} polls the traction power controller ${plc} at the
+  station over Modbus TCP every few seconds, across the backbone.
+  Measurements such as the line voltage and the feeder current sit in input
+  registers as whole numbers in volts and amps. Settings such as the
+  overcurrent trip of feeder breaker ${tag.feeder} sit in holding registers.
 
-  In this lab you read the substation the same way the control room does.
+  In this lab you read the substation the same way the OCC does.
 tasks:
   - "Read the controller's register map from the vendor manual: `modbus map ${plc}`. This sends no traffic."
-  - "Log in to the control room workstation: `ssh ${hmi}`."
+  - "Log in to the OCC SCADA: `ssh ${hmi}`."
   - "Read the line voltage, input register ${plc:voltage.line}: `modbus read ${plc} ir ${plc:voltage.line}`. Then read the feeder current, input register ${plc:current.feeder}."
   - Read how many trains are moving, input register ${plc:trains.moving}.
   - Read the overcurrent trip setting of ${tag.feeder}, holding register ${plc:setpoint.overcurrent}.
@@ -38,8 +38,8 @@ learned: |
   Function code 4 reads input registers (measurements), function code 3
   holding registers (settings). The feeder current rises and falls as trains
   accelerate and coast, and the trip setting sits above the highest current
-  normal traffic draws. Any host that reaches port 502 on ${plc} can read
-  all of this, with no login.
+  normal traffic draws. Any host that reaches port 502 on ${plc}, anywhere on
+  the backbone, can read all of this with no login.
 refs:
   - Modbus Application Protocol Specification v1.1b3
   - EN 50123 (DC switchgear for traction installations)

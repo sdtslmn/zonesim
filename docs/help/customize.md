@@ -69,8 +69,9 @@ then reads "set the pump stop level (tank-plc holding register 1) to 70 %".
 | `devices` | Modbus controllers: vendor, product, firmware, and the point map |
 | `network` | the firewall and the switches: brand, model, management address, and which host is on which switch port. Hosts you leave off every switch go on the first one |
 | `hmi` | which host is the HMI, which controller it shows, and when it reports a communication failure |
-| `polling` | traffic the plant sends by itself, and how often |
-| `flows` | data flows the plant needs. Blocking one breaks something |
+| `polling` | traffic the plant sends by itself, and how often. `when: takeover` marks polls that only run once a backup centre has taken over |
+| `flows` | data flows the plant needs. Blocking one breaks something. `when: takeover` marks flows only needed after a takeover |
+| `standby` | a main control centre with a passive backup: which hosts stop when the main centre is lost, and which host takes over |
 | `ids` | what the IDS treats as normal: who writes to which controller, which controllers are safety systems, who may read device identification |
 
 The template has a comment on every section.
@@ -88,6 +89,24 @@ network:
 ```
 
 Cisco ports are written `Gi1/1`. A port with `null` is a spare. When a site extends another, you can change a switch's brand alone with `network: { switches: [{ name: sw-01, vendor: cisco }] }`; the Site tab does the same with a menu. See [Firewall and switches](devices.md) for what you can do on them.
+
+### A passive backup control centre
+
+Some plants are run from a control centre with a backup that stays passive until the main one is lost, like the OCC and BOCC of the Meridian Line metro. Describe it with `standby`, and mark the backup's polls and flows with `when: takeover`:
+
+```yaml
+standby:
+  centre: OCC                 # what the main centre is called
+  backupName: BOCC            # and the backup
+  backup: bocc-scada          # the backup's control system
+  lost: [occ-scada, ews-1, historian]   # hosts that stop when the main centre is lost
+polling:
+  - { from: bocc-scada, to: tps-1, service: modbus, fc: [3, 4], every: 2, when: takeover }
+flows:
+  - { id: bocc-plc, when: takeover, why: The BOCC runs the traction power once it takes over., from: bocc-scada, to: tps-1, service: modbus, fc: [1, 2, 3, 4, 5, 6] }
+```
+
+`lost` must include the HMI host: during a takeover the backup runs the operator screen. In the terminal, `takeover start` loses the main centre and `takeover end` brings it back. Two checks join the design review: the backup stays passive (it reaches no controller while the main centre has control) and it can take over (its flows work once its rules are switched on). Rules you switch off with `fw disable` count as ready.
 
 ## Roles
 

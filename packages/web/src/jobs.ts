@@ -32,6 +32,13 @@ export const JOB_IDS: JobId[] = ["operator", "network", "soc", "attacker"];
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+/** A button to lose the main control centre, or to bring it back, on sites with a backup centre. */
+function takeoverQuick(sim: Sim): QuickCommand[] {
+  const sb = sim.site.standby;
+  if (!sb) return [];
+  return sim.takeover ? [{ cmd: "takeover end", label: `${sb.centre} back` }] : [{ cmd: "takeover start", label: `${sb.centre} lost: take over` }];
+}
+
 export function jobFor(id: JobId, sim: Sim): Job {
   const consolePlace: Place = { target: "console", label: "Console", sub: "management station" };
   const hostPlace = (name: string | undefined, sub?: string): Place[] => {
@@ -41,7 +48,7 @@ export function jobFor(id: JobId, sim: Sim): Job {
   const fw = sim.infra.firewall.name;
   switch (id) {
     case "operator": {
-      const hmi = sim.site.hmi?.host ?? sim.roleHost("hmi")?.name;
+      const hmi = sim.site.hmi ? sim.hmiHost : sim.roleHost("hmi")?.name;
       const ews = sim.roleHost("ews")?.name;
       const plc = sim.site.hmi?.device ?? sim.roleHost("plc")?.name ?? "PLC";
       return {
@@ -49,10 +56,11 @@ export function jobFor(id: JobId, sim: Sim): Job {
         label: "Operator",
         blurb: `Run the plant from the HMI screen: click equipment to start, stop and change setpoints. The terminal can work from the HMI host too.`,
         view: "hmi",
-        places: [...hostPlace(hmi, "operator HMI"), ...hostPlace(ews, "engineering workstation")],
+        places: [...hostPlace(hmi, sim.takeover ? `operator HMI at the ${sim.site.standby?.backupName ?? "backup"}` : "operator HMI"), ...(sim.takeover && sim.net.host(ews ?? "")?.down ? [] : hostPlace(ews, "engineering workstation"))],
         quick: [
           { cmd: "plant", label: "Plant status" },
           { cmd: `ssh ${hmi ?? "HMI"} modbus map ${plc}`, label: "Register map" },
+          ...takeoverQuick(sim),
         ],
       };
     }
@@ -67,6 +75,7 @@ export function jobFor(id: JobId, sim: Sim): Job {
           { cmd: "devices", label: "Devices" },
           { cmd: "hosts -o wide", label: "Hosts and ports" },
           { cmd: "report", label: "Design review" },
+          ...takeoverQuick(sim),
         ],
       };
     case "soc":

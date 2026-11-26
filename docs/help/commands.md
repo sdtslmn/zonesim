@@ -17,6 +17,7 @@ your site may use other names.
 | `ssh HOST` | log in to a host. Its commands then send traffic from it |
 | `ssh HOST COMMAND` | run one command on a host and come back |
 | `devices` | the firewall and switches, with the command line each one speaks |
+| `takeover`, `takeover start`, `takeover end` | on a plant with a passive backup centre (the metro): who has control, lose the main centre, bring it back |
 | `ssh DEVICE` | log in to the firewall or a switch in its own command line. See [Firewall and switches](devices.md) |
 
 ### Design zones and conduits
@@ -37,6 +38,7 @@ your site may use other names.
 | `fw ... at 1` | put the rule at a position instead of the end |
 | `fw list [CONDUIT]` | rules with their numbers and hit counts |
 | `fw delete CONDUIT N` | delete rule number N |
+| `fw disable CONDUIT N`, `fw enable CONDUIT N` | keep a rule but switch it off, or on again (for example a backup centre's rules until it takes over) |
 | `fw log` | traffic the firewalls blocked |
 | `test SRC DST SERVICE [fc N]` | would this get through? Nothing is sent |
 | `host config HOST mfa=on` | require multi-factor authentication for remote logins |

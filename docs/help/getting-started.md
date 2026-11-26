@@ -15,9 +15,10 @@ There are four plants, each with its own labs:
 - **Harbour data centre**: chillers, pumps and CRAH units cooling a data
   hall, a power meter, and the fire suppression panel.
 - **Meridian Line metro**: a traction power substation feeding the third
-  rail, tunnel ventilation with a fire mode, an emergency trip system that
-  protects track crews, and an operations control centre and backup centre
-  that run the line over a WAN.
+  rail, tunnel ventilation with a fire mode, and an emergency trip system
+  that protects track crews, all run from an operations control centre
+  (OCC) over the backbone, with a backup OCC that stays passive until the
+  OCC is lost.
 
 Nothing leaves your browser and nothing real is touched.
 

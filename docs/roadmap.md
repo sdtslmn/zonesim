@@ -3,6 +3,23 @@
 ZoneSim is being reworked around jobs: the people who work on a plant. Each
 release adds one of them.
 
+## In 0.6
+
+- The metro now follows how metros are run: the PCS and TVCS SCADA, the
+  historian, the engineering workstation and the DMZ sit at the OCC, and
+  reach the controllers at the station over the backbone
+- The backup OCC is passive: it sends nothing to the station until the OCC
+  is lost. `takeover start` loses the OCC (its hosts stop, the BOCC runs the
+  operator screen and polls), `takeover end` brings it back
+- Site files can describe a passive backup centre (`standby`), and polls
+  and flows that only apply after a takeover (`when: takeover`)
+- Two new design checks: the backup stays passive, and it can take over.
+  `fw disable` and `fw enable` keep a rule but switch it off or on, so the
+  BOCC's rules can be built, tested and left off
+- The IDS flags any write from the passive BOCC while the OCC has control
+- Metro labs rewritten for the OCC, plus a new one: the OCC is evacuated,
+  take over from the BOCC (12 metro labs, 46 in all)
+
 ## In 0.5
 
 - A fourth plant, the Meridian Line metro: a traction power substation
@@ -15,8 +32,8 @@ release adds one of them.
 - 11 metro labs, from a tour to an attack that strands trains, a lowered
   protection setting that keeps tripping the feeder, a live rail under a
   track crew, and a full zone and conduit design
-- An HMI screen for the station control room, which runs both the traction
-  power and the tunnel fans (the HMI now writes to every controller it is a
+- An HMI screen for the OCC, which runs both the traction power and the
+  tunnel fans (the HMI now writes to every controller it is a
   normal writer for)
 
 ## In 0.4

@@ -140,7 +140,10 @@ export class HmiView {
     set("hmi-head", this.headHtml(sim));
     set("hmi-screen", this.screenHtml(sim, c));
     set("hmi-banner", this.bannerHtml());
-    set("hmi-foot", `This is the operator screen of <b>${esc(hmi.host)}</b>. It shows what ${esc(hmi.host)} last read from the controllers, and every button sends a Modbus write from ${esc(hmi.host)} to the controller across the network. The <a href="#" data-goto="plant">Plant</a> tab shows the real process.`);
+    const host = sim.hmiHost;
+    const sb = sim.site.standby;
+    const takeoverNote = sb ? (sim.takeover ? ` The ${esc(sb.centre)} is lost: ${esc(host)} at the ${esc(sb.backupName)} has taken over.` : ` If the ${esc(sb.centre)} is lost, ${esc(sb.backup)} at the ${esc(sb.backupName)} takes over this screen (<code>takeover start</code>).`) : "";
+    set("hmi-foot", `This is the operator screen of <b>${esc(host)}</b>. It shows what ${esc(host)} last read from the controllers, and every button sends a Modbus write from ${esc(host)} to the controller across the network. The <a href="#" data-goto="plant">Plant</a> tab shows the real process.${takeoverNote}`);
     this.renderFace(sim, c);
   }
 
@@ -157,7 +160,9 @@ export class HmiView {
       .hmiDevices()
       .map((d) => `<span class="hmi-comm${sim.hmiFresh(d) ? "" : " fail"}" title="${sim.hmiFresh(d) ? `${d} answers` : `No answer from ${d} for ${Math.round(sim.t - (sim.hmiLast[d] ?? 0))} s`}">${esc(d)} ${sim.hmiFresh(d) ? "OK" : "COMM FAIL"}</span>`)
       .join("");
-    return `<span class="hmi-title"><b>${esc(hmi.host)}</b> ${esc(sim.site.name)}</span><nav class="hmi-navs">${nav}</nav><span class="hmi-comms">${comm}</span><span class="hmi-clock">${clock(sim.t)}</span>`;
+    const sb = sim.site.standby;
+    const where = sim.takeover && sb ? ` <span class="hmi-takeover">${esc(sb.backupName)} IN CONTROL</span>` : "";
+    return `<span class="hmi-title"><b>${esc(sim.hmiHost)}</b> ${esc(sim.site.name)}${where}</span><nav class="hmi-navs">${nav}</nav><span class="hmi-comms">${comm}</span><span class="hmi-clock">${clock(sim.t)}</span>`;
   }
 
   private screenHtml(sim: Sim, c: Ctx): string {

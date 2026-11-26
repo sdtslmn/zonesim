@@ -201,6 +201,11 @@ export class Infra {
   /** Recompute which hosts can talk: port up and a member of its own VLAN. */
   refreshLinks(): void {
     for (const h of this.net.hosts) {
+      if (h.down) {
+        h.link = false;
+        h.linkReason = h.down;
+        continue;
+      }
       const at = this.switchOf(h);
       if (!at) {
         h.link = true;
